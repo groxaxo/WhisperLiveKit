@@ -11,6 +11,7 @@ from .whisper import load_model, tokenizer
 from .whisper.audio import TOKENS_PER_SECOND
 import os
 import gc
+from whisperlivekit import ov_assets
 logger = logging.getLogger(__name__)
 
 import torch
@@ -66,6 +67,7 @@ class SimulStreamingOnlineProcessor:
             loaded_model=model,
             mlx_encoder=self.asr.mlx_encoder,
             fw_encoder=self.asr.fw_encoder,
+            ov_encoder=self.asr.ov_encoder,
             )
 
     def insert_silence(self, silence_duration, offset):
@@ -293,27 +295,94 @@ class SimulStreamingASR():
         self.model_name = os.path.basename(self.cfg.model_path).replace(".pt", "")
         self.model_path = os.path.dirname(os.path.abspath(self.cfg.model_path))
     
-        self.mlx_encoder, self.fw_encoder = None, None
+        self.mlx_encoder, self.fw_encoder, self.ov_encoder = None, None, None
+        # Encoder backend selection
+        encoder_backend = kwargs.get('encoder_backend', 'auto')
+        ov_encoder_xml = kwargs.get('ov_encoder_xml', None)
+        ov_device = kwargs.get('ov_device', 'CPU')
+        ov_num_threads = kwargs.get('ov_num_threads', None)
+        ov_num_streams = kwargs.get('ov_num_streams', None)
+        ov_performance_mode = kwargs.get('ov_performance_mode', 'THROUGHPUT')
+        ov_cpu_capability = kwargs.get('ov_cpu_capability', None)
+        bundled_encoder_xml = ov_assets.get_encoder_xml()
+        # Prefer bundled OpenVINO INT8 encoder when available
+        if encoder_backend == 'auto' and self.model_name in {"large", "large-v3"}:
+            if bundled_encoder_xml is not None:
+                encoder_backend = 'openvino'
+                ov_encoder_xml = str(bundled_encoder_xml)
+            else:
+                logger.warning(
+                    "OpenVINO encoder assets not found in bundled directory; falling back to PyTorch encoder."
+                )
+        elif encoder_backend == 'openvino' and not ov_encoder_xml:
+            if bundled_encoder_xml is not None:
+                ov_encoder_xml = str(bundled_encoder_xml)
+            else:
+                raise ValueError(
+                    "--encoder-backend openvino selected but no encoder XML provided or bundled assets missing"
+                )
+        if isinstance(ov_num_streams, str):
+            stripped_streams = ov_num_streams.strip()
+            if stripped_streams.isdigit():
+                ov_num_streams = int(stripped_streams)
+            elif stripped_streams:
+                ov_num_streams = stripped_streams
+            else:
+                ov_num_streams = None
+        if isinstance(ov_performance_mode, str):
+            ov_performance_mode = ov_performance_mode.strip().upper() or None
         if not self.disable_fast_encoder:
-            if HAS_MLX_WHISPER:
-                print('Simulstreaming will use MLX whisper for a faster encoder.')
-                mlx_model_name = mlx_model_mapping[self.model_name]
-                self.mlx_encoder = load_mlx_encoder(path_or_hf_repo=mlx_model_name)
-                self.fast_encoder = True
-            elif HAS_FASTER_WHISPER:
-                print('Simulstreaming will use Faster Whisper for the encoder.')
-                self.fw_encoder = WhisperModel(
-                    self.model_name,
-                    device='auto',
-                    compute_type='auto',
+            if encoder_backend == 'openvino':
+                from whisperlivekit.simul_whisper.ov_encoder import load_ov_encoder
+                if not ov_encoder_xml:
+                    raise ValueError("--ov-encoder-xml must be provided when --encoder-backend openvino")
+                print('Simulstreaming will use OpenVINO INT8 encoder on CPU.')
+                self.ov_encoder = load_ov_encoder(
+                    xml_path=ov_encoder_xml,
+                    device=ov_device,
+                    num_threads=ov_num_threads,
+                    num_streams=ov_num_streams,
+                    performance_mode=ov_performance_mode,
+                    cpu_capability=ov_cpu_capability,
                 )
                 self.fast_encoder = True
+            elif encoder_backend == 'mlx':
+                if HAS_MLX_WHISPER:
+                    print('Simulstreaming will use MLX whisper for a faster encoder.')
+                    mlx_model_name = mlx_model_mapping[self.model_name]
+                    self.mlx_encoder = load_mlx_encoder(path_or_hf_repo=mlx_model_name)
+                    self.fast_encoder = True
+            elif encoder_backend == 'ctranslate2':
+                if HAS_FASTER_WHISPER:
+                    print('Simulstreaming will use Faster Whisper for the encoder.')
+                    self.fw_encoder = WhisperModel(
+                        self.model_name,
+                        device='auto',
+                        compute_type='auto',
+                    )
+                    self.fast_encoder = True
+            else:  # auto
+                if HAS_MLX_WHISPER:
+                    print('Simulstreaming will use MLX whisper for a faster encoder.')
+                    mlx_model_name = mlx_model_mapping[self.model_name]
+                    self.mlx_encoder = load_mlx_encoder(path_or_hf_repo=mlx_model_name)
+                    self.fast_encoder = True
+                elif HAS_FASTER_WHISPER:
+                    print('Simulstreaming will use Faster Whisper for the encoder.')
+                    self.fw_encoder = WhisperModel(
+                        self.model_name,
+                        device='auto',
+                        compute_type='auto',
+                    )
+                    self.fast_encoder = True
 
         self.models = [self.load_model() for i in range(self.preload_model_count)]
 
 
     def load_model(self):
-        whisper_model = load_model(name=self.model_name, download_root=self.model_path, decoder_only=self.fast_encoder)
+        # Force CPU device for decoder when using OpenVINO encoder (CPU-only)
+        device = 'cpu' if self.ov_encoder is not None else None
+        whisper_model = load_model(name=self.model_name, download_root=self.model_path, decoder_only=self.fast_encoder, device=device)
         warmup_audio = load_file(self.warmup_file)
         if warmup_audio is not None:
             warmup_audio = torch.from_numpy(warmup_audio).float()
@@ -323,6 +392,7 @@ class SimulStreamingASR():
                     loaded_model=whisper_model,
                     mlx_encoder=self.mlx_encoder,
                     fw_encoder=self.fw_encoder,
+                    ov_encoder=self.ov_encoder,
                 )
                 temp_model.warmup(warmup_audio)
                 temp_model.remove_hooks()

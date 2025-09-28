@@ -10,7 +10,7 @@
 - medium
 - large-v1
 - large-v2
-- large-v3
+- large-v3 *(bundled with OpenVINO INT8 encoder for low-latency CPU use)*
 - large-v3-turbo
 
 ## How to choose?
@@ -44,6 +44,10 @@
 | large-v2 | Slowest | Excellent | Yes | Yes | Best overall quality |
 | large-v3 | Slowest | Excellent | Yes | Yes | Maximum accuracy |
 | large-v3-turbo | Fast | Excellent | Yes | No | Fast, high-quality transcription |
+
+### Bundled OpenVINO INT8 Snapshot
+
+When you select `large-v3` (or `large`), WhisperLiveKit automatically loads the bundled OpenVINO INT8 encoder found in `whisper-large-v3-int8-ov/` for the SimulStreaming backend. This gives a CPU-only deployment better latency while the PyTorch decoder continues to deliver full AlignAtt functionality. If the OpenVINO assets are missing, the system falls back to the standard PyTorch encoder.
 
 ### Additional Considerations
 

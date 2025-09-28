@@ -42,6 +42,24 @@ pip install whisperlivekit
 ```
 > You can also clone the repo and `pip install -e .` for the latest version.
 
+#### Conda environment setup (recommended for OpenVINO INT8)
+
+```bash
+conda create -n whisperlivekit python=3.10 -y
+conda activate whisperlivekit
+pip install -e .[openvino]
+
+# Optional warmup smoke test
+python - <<'PY'
+from whisperlivekit.simul_whisper.backend import SimulStreamingASR
+asr = SimulStreamingASR(modelsize='large-v3', lan='en', encoder_backend='auto')
+print('fast_encoder:', asr.fast_encoder)
+print('ov_encoder loaded:', bool(asr.ov_encoder))
+PY
+```
+
+The bundled OpenVINO encoder is used automatically; the smoke test should print `fast_encoder: True` and `ov_encoder loaded: True`. Warnings about optional packages can be ignored unless you need those extras.
+
 
 >  **FFmpeg is required** and must be installed before using WhisperLiveKit
 > 
@@ -88,6 +106,9 @@ See  **Parameters & Configuration** below on how to use them.
 ```bash
 # Use better model than default (small)
 whisperlivekit-server --model large-v3
+
+# Force PyTorch encoder if you do not want the bundled OpenVINO INT8 encoder
+whisperlivekit-server --model large-v3 --encoder-backend ctranslate2
 
 # Advanced configuration with diarization and language
 whisperlivekit-server --host 0.0.0.0 --port 8000 --model medium --diarization --language fr
@@ -170,6 +191,13 @@ An important list of parameters can be changed. But what *should* you change?
 | SimulStreaming backend options | Description | Default |
 |-----------|-------------|---------|
 | `--disable-fast-encoder` | Disable Faster Whisper or MLX Whisper backends for the encoder (if installed). Inference can be slower but helpful when GPU memory is limited | `False` |
+| `--encoder-backend` | Select encoder backend (`auto`, `mlx`, `ctranslate2`, `openvino`) | `auto` |
+| `--ov-encoder-xml` | Path to OpenVINO encoder IR. Required when `--encoder-backend openvino` | `None` |
+| `--ov-device` | OpenVINO target device (e.g. `CPU`) | `CPU` |
+| `--ov-num-threads` | Override CPU thread count for OpenVINO encoder | `All cores` |
+| `--ov-num-streams` | Number of CPU inference streams (`AUTO` or integer) | `None` |
+| `--ov-performance-mode` | Performance hint passed to OpenVINO (`LATENCY`, `THROUGHPUT`, `CUMULATIVE_THROUGHPUT`) | `THROUGHPUT` |
+| `--ov-cpu-capability` | Force a specific CPU capability hint (e.g. `AVX2`) | `None` |
 | `--frame-threshold` | AlignAtt frame threshold (lower = faster, higher = more accurate) | `25` |
 | `--beams` | Number of beams for beam search (1 = greedy decoding) | `1` |
 | `--decoder` | Force decoder type (`beam` or `greedy`) | `auto` |
