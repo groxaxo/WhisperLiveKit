@@ -1,44 +1,77 @@
-/* Theme, WebSocket, recording, rendering logic extracted from inline script and adapted for segmented theme control and WS caption */
+/* Notepad-centric UI that streams dictation and optional translation results. */
 
 let isRecording = false;
-let websocket = null;
-let recorder = null;
-let chunkDuration = 100;
-let websocketUrl = "ws://localhost:8000/asr";
 let userClosing = false;
-let wakeLock = null;
-let startTime = null;
-let timerInterval = null;
 let audioContext = null;
 let analyser = null;
 let microphone = null;
-let waveCanvas = document.getElementById("waveCanvas");
-let waveCtx = waveCanvas.getContext("2d");
+let recorder = null;
+let wakeLock = null;
 let animationFrame = null;
-let waitingForStop = false;
-let lastReceivedData = null;
-let lastSignature = null;
-let availableMicrophones = [];
-let selectedMicrophoneId = null;
+let startTime = null;
+let timerInterval = null;
+const chunkDuration = 100;
 
-waveCanvas.width = 60 * (window.devicePixelRatio || 1);
-waveCanvas.height = 30 * (window.devicePixelRatio || 1);
-waveCtx.scale(window.devicePixelRatio || 1, window.devicePixelRatio || 1);
-
+const waveCanvas = document.getElementById("waveCanvas");
+const waveCtx = waveCanvas.getContext("2d");
 const statusText = document.getElementById("status");
 const recordButton = document.getElementById("recordButton");
-const chunkSelector = document.getElementById("chunkSelector");
-const websocketInput = document.getElementById("websocketInput");
-const websocketDefaultSpan = document.getElementById("wsDefaultUrl");
-const linesTranscriptDiv = document.getElementById("linesTranscript");
 const timerElement = document.querySelector(".timer");
 const themeRadios = document.querySelectorAll('input[name="theme"]');
 const microphoneSelect = document.getElementById("microphoneSelect");
+const websocketInput = document.getElementById("websocketInput");
+const translationWebsocketInput = document.getElementById("translationWebsocketInput");
+const translationToggle = document.getElementById("translationToggle");
+const translationPane = document.getElementById("translationPane");
+const dictationNote = document.getElementById("dictationNote");
+const translationNote = document.getElementById("translationNote");
+const dictationPreviewText = document.querySelector("#dictationPreview .preview-text");
+const translationPreviewText = document.querySelector("#translationPreview .preview-text");
+const saveNoteButton = document.getElementById("saveNoteButton");
+const newNoteButton = document.getElementById("newNoteButton");
+const continueNoteButton = document.getElementById("continueNoteButton");
+const saveTranslationButton = document.getElementById("saveTranslationButton");
+
+const LOCAL_STORAGE_NOTE_KEY = "whisper-notepad-current";
+const LOCAL_STORAGE_ARCHIVE_KEY = "whisper-notepad-archive";
+const LOCAL_STORAGE_TRANSLATION_ENABLED = "whisper-notepad-translation";
+const LOCAL_STORAGE_MIC = "selectedMicrophone";
+
+let translationEnabled = false;
+let selectedMicrophoneId = null;
+let availableMicrophones = [];
+
+const streamControllers = {
+  dictation: {
+    mode: "dictation",
+    socket: null,
+    waitingForStop: false,
+    lastData: null,
+    lastSignature: null,
+    baseText: "",
+    noteElement: dictationNote,
+    previewTextElement: dictationPreviewText,
+    urlInput: websocketInput,
+    url: "",
+  },
+  translation: {
+    mode: "translation",
+    socket: null,
+    waitingForStop: false,
+    lastData: null,
+    lastSignature: null,
+    baseText: "",
+    noteElement: translationNote,
+    previewTextElement: translationPreviewText,
+    urlInput: translationWebsocketInput,
+    url: "",
+  },
+};
 
 function getWaveStroke() {
   const styles = getComputedStyle(document.documentElement);
   const v = styles.getPropertyValue("--wave-stroke").trim();
-  return v || "#000";
+  return v || "#2563eb";
 }
 
 let waveStroke = getWaveStroke();
@@ -57,7 +90,6 @@ function applyTheme(pref) {
   updateWaveStroke();
 }
 
-// Persisted theme preference
 const savedThemePref = localStorage.getItem("themePreference") || "system";
 applyTheme(savedThemePref);
 if (themeRadios.length) {
@@ -72,7 +104,6 @@ if (themeRadios.length) {
   });
 }
 
-// React to OS theme changes when in "system" mode
 const darkMq = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)");
 const handleOsThemeChange = () => {
   const pref = localStorage.getItem("themePreference") || "system";
@@ -81,308 +112,209 @@ const handleOsThemeChange = () => {
 if (darkMq && darkMq.addEventListener) {
   darkMq.addEventListener("change", handleOsThemeChange);
 } else if (darkMq && darkMq.addListener) {
-  // deprecated, but included for Safari compatibility
   darkMq.addListener(handleOsThemeChange);
 }
 
-async function enumerateMicrophones() {
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    stream.getTracks().forEach(track => track.stop());
-
-    const devices = await navigator.mediaDevices.enumerateDevices();
-    availableMicrophones = devices.filter(device => device.kind === 'audioinput');
-
-    populateMicrophoneSelect();
-    console.log(`Found ${availableMicrophones.length} microphone(s)`);
-  } catch (error) {
-    console.error('Error enumerating microphones:', error);
-    statusText.textContent = "Error accessing microphones. Please grant permission.";
+function restoreNoteFromStorage() {
+  const saved = localStorage.getItem(LOCAL_STORAGE_NOTE_KEY);
+  if (saved) {
+    dictationNote.value = saved;
+    streamControllers.dictation.baseText = saved.trimEnd();
   }
 }
 
-function populateMicrophoneSelect() {
-  if (!microphoneSelect) return;
+function persistNote() {
+  localStorage.setItem(LOCAL_STORAGE_NOTE_KEY, dictationNote.value);
+}
 
-  microphoneSelect.innerHTML = '<option value="">Default Microphone</option>';
+restoreNoteFromStorage();
 
-  availableMicrophones.forEach((device, index) => {
-    const option = document.createElement('option');
-    option.value = device.deviceId;
-    option.textContent = device.label || `Microphone ${index + 1}`;
-    microphoneSelect.appendChild(option);
-  });
-
-  const savedMicId = localStorage.getItem('selectedMicrophone');
-  if (savedMicId && availableMicrophones.some(mic => mic.deviceId === savedMicId)) {
-    microphoneSelect.value = savedMicId;
-    selectedMicrophoneId = savedMicId;
+function restoreTranslationPreference() {
+  const saved = localStorage.getItem(LOCAL_STORAGE_TRANSLATION_ENABLED);
+  if (saved === "1") {
+    translationEnabled = true;
+    translationToggle.checked = true;
+    translationPane.classList.remove("is-hidden");
+  } else {
+    translationEnabled = false;
+    translationToggle.checked = false;
+    translationPane.classList.add("is-hidden");
   }
 }
 
-function handleMicrophoneChange() {
-  selectedMicrophoneId = microphoneSelect.value || null;
-  localStorage.setItem('selectedMicrophone', selectedMicrophoneId || '');
+restoreTranslationPreference();
 
-  const selectedDevice = availableMicrophones.find(mic => mic.deviceId === selectedMicrophoneId);
-  const deviceName = selectedDevice ? selectedDevice.label : 'Default Microphone';
-
-  console.log(`Selected microphone: ${deviceName}`);
-  statusText.textContent = `Microphone changed to: ${deviceName}`;
-
-  if (isRecording) {
-    statusText.textContent = "Switching microphone... Please wait.";
-    stopRecording().then(() => {
-      setTimeout(() => {
-        toggleRecording();
-      }, 1000);
-    });
-  }
-}
-
-// Helpers
-function fmt1(x) {
-  const n = Number(x);
-  return Number.isFinite(n) ? n.toFixed(1) : x;
-}
-
-// Default WebSocket URL computation
 const host = window.location.hostname || "localhost";
 const port = window.location.port;
 const protocol = window.location.protocol === "https:" ? "wss" : "ws";
 const defaultWebSocketUrl = `${protocol}://${host}${port ? ":" + port : ""}/asr`;
+const defaultTranslationUrl = `${defaultWebSocketUrl}?task=translate`;
 
-// Populate default caption and input
-if (websocketDefaultSpan) websocketDefaultSpan.textContent = defaultWebSocketUrl;
 websocketInput.value = defaultWebSocketUrl;
-websocketUrl = defaultWebSocketUrl;
+translationWebsocketInput.value = defaultTranslationUrl;
+streamControllers.dictation.url = defaultWebSocketUrl;
+streamControllers.translation.url = defaultTranslationUrl;
 
-// Optional chunk selector (guard for presence)
-if (chunkSelector) {
-  chunkSelector.addEventListener("change", () => {
-    chunkDuration = parseInt(chunkSelector.value);
-  });
+function getActiveModes() {
+  const modes = ["dictation"];
+  if (translationEnabled) {
+    modes.push("translation");
+  }
+  return modes;
 }
 
-// WebSocket input change handling
-websocketInput.addEventListener("change", () => {
-  const urlValue = websocketInput.value.trim();
-  if (!urlValue.startsWith("ws://") && !urlValue.startsWith("wss://")) {
-    statusText.textContent = "Invalid WebSocket URL (must start with ws:// or wss://)";
-    return;
-  }
-  websocketUrl = urlValue;
-  statusText.textContent = "WebSocket URL updated. Ready to connect.";
-});
+function isAnyWaiting() {
+  return getActiveModes().some((mode) => streamControllers[mode].waitingForStop);
+}
 
-function setupWebSocket() {
-  return new Promise((resolve, reject) => {
-    try {
-      websocket = new WebSocket(websocketUrl);
-    } catch (error) {
-      statusText.textContent = "Invalid WebSocket URL. Please check and try again.";
-      reject(error);
-      return;
+function combineBaseWithNew(base, finalText) {
+  if (!base) return finalText;
+  if (!finalText) return base;
+  const separator = base.endsWith("\n") ? "\n" : "\n\n";
+  return base + separator + finalText;
+}
+
+function buildTextFromLines(data, finalizing = false) {
+  const lines = data?.lines || [];
+  const bufferTranscription = (data?.buffer_transcription || "").trim();
+  const bufferDiarization = (data?.buffer_diarization || "").trim();
+  const paragraphs = [];
+
+  lines.forEach((item, idx) => {
+    if (!item) return;
+    if (item.speaker === -2) return;
+    let text = (item.text || "").trim();
+    if (item.speaker && item.speaker > 0) {
+      text = `Speaker ${item.speaker}: ${text}`;
     }
 
-    websocket.onopen = () => {
-      statusText.textContent = "Connected to server.";
-      resolve();
-    };
-
-    websocket.onclose = () => {
-      if (userClosing) {
-        if (waitingForStop) {
-          statusText.textContent = "Processing finalized or connection closed.";
-          if (lastReceivedData) {
-            renderLinesWithBuffer(
-              lastReceivedData.lines || [],
-              lastReceivedData.buffer_diarization || "",
-              lastReceivedData.buffer_transcription || "",
-              0,
-              0,
-              true
-            );
-          }
-        }
-      } else {
-        statusText.textContent = "Disconnected from the WebSocket server. (Check logs if model is loading.)";
-        if (isRecording) {
-          stopRecording();
-        }
+    if (idx === lines.length - 1 && finalizing) {
+      if (bufferDiarization) {
+        text += (text ? " " : "") + bufferDiarization;
       }
-      isRecording = false;
-      waitingForStop = false;
-      userClosing = false;
-      lastReceivedData = null;
-      websocket = null;
-      updateUI();
-    };
-
-    websocket.onerror = () => {
-      statusText.textContent = "Error connecting to WebSocket.";
-      reject(new Error("Error connecting to WebSocket"));
-    };
-
-    websocket.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-
-      if (data.type === "ready_to_stop") {
-        console.log("Ready to stop received, finalizing display and closing WebSocket.");
-        waitingForStop = false;
-
-        if (lastReceivedData) {
-          renderLinesWithBuffer(
-            lastReceivedData.lines || [],
-            lastReceivedData.buffer_diarization || "",
-            lastReceivedData.buffer_transcription || "",
-            0,
-            0,
-            true
-          );
-        }
-        statusText.textContent = "Finished processing audio! Ready to record again.";
-        recordButton.disabled = false;
-
-        if (websocket) {
-          websocket.close();
-        }
-        return;
+      if (bufferTranscription) {
+        text += (text ? " " : "") + bufferTranscription;
       }
+    }
 
-      lastReceivedData = data;
-
-      const {
-        lines = [],
-        buffer_transcription = "",
-        buffer_diarization = "",
-        remaining_time_transcription = 0,
-        remaining_time_diarization = 0,
-        status = "active_transcription",
-      } = data;
-
-      renderLinesWithBuffer(
-        lines,
-        buffer_diarization,
-        buffer_transcription,
-        remaining_time_diarization,
-        remaining_time_transcription,
-        false,
-        status
-      );
-    };
+    paragraphs.push(text);
   });
+
+  const finalText = paragraphs.filter((p) => p.length > 0).join("\n\n");
+
+  let previewText = "";
+  if (lines.length) {
+    const last = lines[lines.length - 1];
+    previewText = (last?.text || "").trim();
+    if (!finalizing) {
+      if (bufferDiarization) previewText += (previewText ? " " : "") + bufferDiarization;
+      if (bufferTranscription) previewText += (previewText ? " " : "") + bufferTranscription;
+    }
+  } else if (!finalizing) {
+    previewText = bufferTranscription;
+  }
+
+  if (finalizing) {
+    previewText = "";
+  }
+
+  return { finalText, previewText };
 }
 
-function renderLinesWithBuffer(
-  lines,
-  buffer_diarization,
-  buffer_transcription,
-  remaining_time_diarization,
-  remaining_time_transcription,
-  isFinalizing = false,
-  current_status = "active_transcription"
-) {
-  if (current_status === "no_audio_detected") {
-    linesTranscriptDiv.innerHTML =
-      "<p style='text-align: center; color: var(--muted); margin-top: 20px;'><em>No audio detected...</em></p>";
+function updateStream(mode, data, finalizing = false) {
+  const ctrl = streamControllers[mode];
+  if (!ctrl) return;
+
+  if (data?.status === "no_audio_detected") {
+    ctrl.previewTextElement.textContent = "No audio detected...";
     return;
   }
 
-  const showLoading = !isFinalizing && (lines || []).some((it) => it.speaker == 0);
-  const showTransLag = !isFinalizing && remaining_time_transcription > 0;
-  const showDiaLag = !isFinalizing && !!buffer_diarization && remaining_time_diarization > 0;
   const signature = JSON.stringify({
-    lines: (lines || []).map((it) => ({ speaker: it.speaker, text: it.text, beg: it.beg, end: it.end })),
-    buffer_transcription: buffer_transcription || "",
-    buffer_diarization: buffer_diarization || "",
-    status: current_status,
-    showLoading,
-    showTransLag,
-    showDiaLag,
-    isFinalizing: !!isFinalizing,
+    lines: (data?.lines || []).map((it) => ({ speaker: it.speaker, text: it.text })),
+    buffer_transcription: data?.buffer_transcription || "",
+    buffer_diarization: data?.buffer_diarization || "",
+    finalizing,
   });
-  if (lastSignature === signature) {
-    const t = document.querySelector(".lag-transcription-value");
-    if (t) t.textContent = fmt1(remaining_time_transcription);
-    const d = document.querySelector(".lag-diarization-value");
-    if (d) d.textContent = fmt1(remaining_time_diarization);
-    const ld = document.querySelector(".loading-diarization-value");
-    if (ld) ld.textContent = fmt1(remaining_time_diarization);
+
+  if (!finalizing && ctrl.lastSignature === signature) {
     return;
   }
-  lastSignature = signature;
 
-  const linesHtml = (lines || [])
-    .map((item, idx) => {
-      let timeInfo = "";
-      if (item.beg !== undefined && item.end !== undefined) {
-        timeInfo = ` ${item.beg} - ${item.end}`;
-      }
+  ctrl.lastSignature = signature;
 
-      let speakerLabel = "";
-      if (item.speaker === -2) {
-        speakerLabel = `<span class="silence">Silence<span id='timeInfo'>${timeInfo}</span></span>`;
-      } else if (item.speaker == 0 && !isFinalizing) {
-        speakerLabel = `<span class='loading'><span class="spinner"></span><span id='timeInfo'><span class="loading-diarization-value">${fmt1(
-          remaining_time_diarization
-        )}</span> second(s) of audio are undergoing diarization</span></span>`;
-      } else if (item.speaker !== 0) {
-        speakerLabel = `<span id="speaker">Speaker ${item.speaker}<span id='timeInfo'>${timeInfo}</span></span>`;
-      }
+  const { finalText, previewText } = buildTextFromLines(data, finalizing);
+  const combined = combineBaseWithNew(ctrl.baseText, finalText);
+  ctrl.noteElement.value = combined;
+  ctrl.previewTextElement.textContent = previewText;
+  ctrl.noteElement.scrollTop = ctrl.noteElement.scrollHeight;
 
-      let currentLineText = item.text || "";
+  if (mode === "dictation" && finalizing) {
+    persistNote();
+  }
 
-      if (idx === lines.length - 1) {
-        if (!isFinalizing && item.speaker !== -2) {
-          if (remaining_time_transcription > 0) {
-            speakerLabel += `<span class="label_transcription"><span class="spinner"></span>Transcription lag <span id='timeInfo'><span class="lag-transcription-value">${fmt1(
-              remaining_time_transcription
-            )}</span>s</span></span>`;
-          }
-          if (buffer_diarization && remaining_time_diarization > 0) {
-            speakerLabel += `<span class="label_diarization"><span class="spinner"></span>Diarization lag<span id='timeInfo'><span class="lag-diarization-value">${fmt1(
-              remaining_time_diarization
-            )}</span>s</span></span>`;
-          }
-        }
-
-        if (buffer_diarization) {
-          if (isFinalizing) {
-            currentLineText +=
-              (currentLineText.length > 0 && buffer_diarization.trim().length > 0 ? " " : "") + buffer_diarization.trim();
-          } else {
-            currentLineText += `<span class="buffer_diarization">${buffer_diarization}</span>`;
-          }
-        }
-        if (buffer_transcription) {
-          if (isFinalizing) {
-            currentLineText +=
-              (currentLineText.length > 0 && buffer_transcription.trim().length > 0 ? " " : "") +
-              buffer_transcription.trim();
-          } else {
-            currentLineText += `<span class="buffer_transcription">${buffer_transcription}</span>`;
-          }
-        }
-      }
-
-      return currentLineText.trim().length > 0 || speakerLabel.length > 0
-        ? `<p>${speakerLabel}<br/><div class='textcontent'>${currentLineText}</div></p>`
-        : `<p>${speakerLabel}<br/></p>`;
-    })
-    .join("");
-
-  linesTranscriptDiv.innerHTML = linesHtml;
-  window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+  if (finalizing) {
+    ctrl.baseText = ctrl.noteElement.value.trimEnd();
+    ctrl.previewTextElement.textContent = "";
+    ctrl.lastData = null;
+  }
 }
 
-function updateTimer() {
-  if (!startTime) return;
+function finalizeStopIfNeeded() {
+  if (isRecording) return;
+  if (isAnyWaiting()) return;
+  if (getActiveModes().some((mode) => streamControllers[mode].socket)) return;
 
-  const elapsed = Math.floor((Date.now() - startTime) / 1000);
-  const minutes = Math.floor(elapsed / 60).toString().padStart(2, "0");
-  const seconds = (elapsed % 60).toString().padStart(2, "0");
-  timerElement.textContent = `${minutes}:${seconds}`;
+  dictationNote.readOnly = false;
+  dictationNote.classList.remove("locked");
+  streamControllers.dictation.baseText = dictationNote.value.trimEnd();
+  persistNote();
+
+  translationNote.readOnly = true;
+  translationNote.classList.remove("locked");
+  streamControllers.translation.baseText = translationNote.value.trimEnd();
+
+  userClosing = false;
+  statusText.textContent = "Finished processing audio! Ready to record again.";
+  updateUI();
+}
+
+function closeStream(mode) {
+  const ctrl = streamControllers[mode];
+  if (ctrl.socket) {
+    ctrl.socket.onopen = null;
+    ctrl.socket.onmessage = null;
+    ctrl.socket.onclose = null;
+    ctrl.socket.onerror = null;
+    try {
+      ctrl.socket.close();
+    } catch (err) {
+      console.warn(`Error closing ${mode} socket`, err);
+    }
+  }
+  ctrl.socket = null;
+  ctrl.waitingForStop = false;
+  ctrl.lastData = null;
+  ctrl.lastSignature = null;
+  finalizeStopIfNeeded();
+}
+
+function updateUI() {
+  const waiting = isAnyWaiting();
+  recordButton.classList.toggle("recording", isRecording);
+  recordButton.disabled = waiting;
+
+  if (waiting) {
+    statusText.textContent = "Please wait for processing to complete...";
+  } else if (isRecording) {
+    statusText.textContent = translationEnabled
+      ? "Streaming dictation and translation..."
+      : "Recording...";
+  } else if (!waiting && !isRecording && !userClosing) {
+    if (!streamControllers.dictation.noteElement.value) {
+      statusText.textContent = "Click to start transcription";
+    }
+  }
 }
 
 function drawWaveform() {
@@ -392,12 +324,7 @@ function drawWaveform() {
   const dataArray = new Uint8Array(bufferLength);
   analyser.getByteTimeDomainData(dataArray);
 
-  waveCtx.clearRect(
-    0,
-    0,
-    waveCanvas.width / (window.devicePixelRatio || 1),
-    waveCanvas.height / (window.devicePixelRatio || 1)
-  );
+  waveCtx.clearRect(0, 0, waveCanvas.width / (window.devicePixelRatio || 1), waveCanvas.height / (window.devicePixelRatio || 1));
   waveCtx.lineWidth = 1;
   waveCtx.strokeStyle = waveStroke;
   waveCtx.beginPath();
@@ -418,13 +345,19 @@ function drawWaveform() {
     x += sliceWidth;
   }
 
-  waveCtx.lineTo(
-    waveCanvas.width / (window.devicePixelRatio || 1),
-    (waveCanvas.height / (window.devicePixelRatio || 1)) / 2
-  );
+  waveCtx.lineTo(waveCanvas.width / (window.devicePixelRatio || 1), (waveCanvas.height / (window.devicePixelRatio || 1)) / 2);
   waveCtx.stroke();
 
   animationFrame = requestAnimationFrame(drawWaveform);
+}
+
+function updateTimer() {
+  if (!startTime) return;
+
+  const elapsed = Math.floor((Date.now() - startTime) / 1000);
+  const minutes = Math.floor(elapsed / 60).toString().padStart(2, "0");
+  const seconds = (elapsed % 60).toString().padStart(2, "0");
+  timerElement.textContent = `${minutes}:${seconds}`;
 }
 
 async function startRecording() {
@@ -432,10 +365,10 @@ async function startRecording() {
     try {
       wakeLock = await navigator.wakeLock.request("screen");
     } catch (err) {
-      console.log("Error acquiring wake lock.");
+      console.log("Wake lock not available", err);
     }
 
-    const audioConstraints = selectedMicrophoneId 
+    const audioConstraints = selectedMicrophoneId
       ? { audio: { deviceId: { exact: selectedMicrophoneId } } }
       : { audio: true };
 
@@ -449,9 +382,12 @@ async function startRecording() {
 
     recorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
     recorder.ondataavailable = (e) => {
-      if (websocket && websocket.readyState === WebSocket.OPEN) {
-        websocket.send(e.data);
-      }
+      getActiveModes().forEach((mode) => {
+        const ctrl = streamControllers[mode];
+        if (ctrl.socket && ctrl.socket.readyState === WebSocket.OPEN) {
+          ctrl.socket.send(e.data);
+        }
+      });
     };
     recorder.start(chunkDuration);
 
@@ -459,16 +395,25 @@ async function startRecording() {
     timerInterval = setInterval(updateTimer, 1000);
     drawWaveform();
 
+    dictationNote.readOnly = true;
+    dictationNote.classList.add("locked");
+    if (translationEnabled) {
+      translationNote.readOnly = true;
+      translationNote.classList.add("locked");
+    }
+
     isRecording = true;
     updateUI();
   } catch (err) {
     if (window.location.hostname === "0.0.0.0") {
-      statusText.textContent =
-        "Error accessing microphone. Browsers may block microphone access on 0.0.0.0. Try using localhost:8000 instead.";
+      statusText.textContent = "Error accessing microphone. Browsers may block microphone access on 0.0.0.0. Try using localhost:8000 instead.";
     } else {
       statusText.textContent = "Error accessing microphone. Please allow microphone access.";
     }
     console.error(err);
+    isRecording = false;
+    updateUI();
+    throw err;
   }
 }
 
@@ -476,20 +421,22 @@ async function stopRecording() {
   if (wakeLock) {
     try {
       await wakeLock.release();
-    } catch (e) {
-      // ignore
+    } catch (err) {
+      console.warn("Error releasing wake lock", err);
     }
     wakeLock = null;
   }
 
   userClosing = true;
-  waitingForStop = true;
 
-  if (websocket && websocket.readyState === WebSocket.OPEN) {
-    const emptyBlob = new Blob([], { type: "audio/webm" });
-    websocket.send(emptyBlob);
-    statusText.textContent = "Recording stopped. Processing final audio...";
-  }
+  const emptyBlob = new Blob([], { type: "audio/webm" });
+  getActiveModes().forEach((mode) => {
+    const ctrl = streamControllers[mode];
+    if (ctrl.socket && ctrl.socket.readyState === WebSocket.OPEN) {
+      ctrl.waitingForStop = true;
+      ctrl.socket.send(emptyBlob);
+    }
+  });
 
   if (recorder) {
     recorder.stop();
@@ -530,50 +477,218 @@ async function stopRecording() {
   updateUI();
 }
 
-async function toggleRecording() {
-  if (!isRecording) {
-    if (waitingForStop) {
-      console.log("Waiting for stop, early return");
+async function setupStream(mode) {
+  const ctrl = streamControllers[mode];
+  if (!ctrl) return;
+  if (ctrl.socket && ctrl.socket.readyState === WebSocket.OPEN) {
+    return;
+  }
+
+  return new Promise((resolve, reject) => {
+    let ws;
+    try {
+      ws = new WebSocket(ctrl.url);
+    } catch (error) {
+      reject(error);
       return;
     }
-    console.log("Connecting to WebSocket");
-    try {
-      if (websocket && websocket.readyState === WebSocket.OPEN) {
-        await startRecording();
-      } else {
-        await setupWebSocket();
-        await startRecording();
+    ctrl.socket = ws;
+
+    ws.onopen = () => {
+      statusText.textContent = `Connected to ${mode} server.`;
+      resolve();
+    };
+
+    ws.onclose = () => {
+      ctrl.socket = null;
+      ctrl.waitingForStop = false;
+      ctrl.lastData = null;
+      ctrl.lastSignature = null;
+      if (!userClosing) {
+        statusText.textContent = `${mode === "translation" ? "Translation" : "Dictation"} connection closed.`;
       }
-    } catch (err) {
-      statusText.textContent = "Could not connect to WebSocket or access mic. Aborted.";
-      console.error(err);
+      finalizeStopIfNeeded();
+    };
+
+    ws.onerror = (evt) => {
+      console.error(`WebSocket error on ${mode}`, evt);
+      reject(new Error(`Error connecting to ${mode} WebSocket.`));
+    };
+
+    ws.onmessage = (event) => {
+      if (typeof event.data !== "string") return;
+      let data;
+      try {
+        data = JSON.parse(event.data);
+      } catch (err) {
+        console.warn(`Could not parse ${mode} message`, err);
+        return;
+      }
+      if (data.type === "ready_to_stop") {
+        ctrl.waitingForStop = false;
+        if (ctrl.lastData) {
+          updateStream(mode, ctrl.lastData, true);
+        }
+        ctrl.lastSignature = null;
+        ctrl.lastData = null;
+        if (ctrl.socket && ctrl.socket.readyState === WebSocket.OPEN) {
+          ctrl.socket.close();
+        }
+        finalizeStopIfNeeded();
+        return;
+      }
+
+      ctrl.lastData = data;
+      updateStream(mode, data, false);
+    };
+  });
+}
+
+async function toggleRecording() {
+  if (isRecording) {
+    await stopRecording();
+    return;
+  }
+
+  if (isAnyWaiting()) {
+    return;
+  }
+
+  const activeModes = getActiveModes();
+
+  for (const mode of activeModes) {
+    const ctrl = streamControllers[mode];
+    const urlValue = (ctrl.urlInput?.value || "").trim();
+    if (!urlValue) {
+      statusText.textContent = `Please provide a ${mode} WebSocket URL.`;
+      return;
     }
-  } else {
-    console.log("Stopping recording");
-    stopRecording();
+    if (!urlValue.startsWith("ws://") && !urlValue.startsWith("wss://")) {
+      statusText.textContent = "Invalid WebSocket URL (must start with ws:// or wss://).";
+      return;
+    }
+    ctrl.url = urlValue;
+    ctrl.baseText = ctrl.noteElement.value.trimEnd();
+    ctrl.lastSignature = null;
+    ctrl.previewTextElement.textContent = "";
+  }
+
+  try {
+    for (const mode of activeModes) {
+      await setupStream(mode);
+    }
+    await startRecording();
+  } catch (error) {
+    console.error(error);
+    statusText.textContent = "Could not connect to WebSocket or access mic. Aborted.";
+    activeModes.forEach((mode) => closeStream(mode));
+    userClosing = false;
   }
 }
 
-function updateUI() {
-  recordButton.classList.toggle("recording", isRecording);
-  recordButton.disabled = waitingForStop;
+function handleMicrophoneChange() {
+  selectedMicrophoneId = microphoneSelect.value || null;
+  localStorage.setItem(LOCAL_STORAGE_MIC, selectedMicrophoneId || "");
 
-  if (waitingForStop) {
-    if (statusText.textContent !== "Recording stopped. Processing final audio...") {
-      statusText.textContent = "Please wait for processing to complete...";
-    }
-  } else if (isRecording) {
-    statusText.textContent = "Recording...";
-  } else {
-    if (
-      statusText.textContent !== "Finished processing audio! Ready to record again." &&
-      statusText.textContent !== "Processing finalized or connection closed."
-    ) {
-      statusText.textContent = "Click to start transcription";
-    }
+  const selectedDevice = availableMicrophones.find((mic) => mic.deviceId === selectedMicrophoneId);
+  const deviceName = selectedDevice ? selectedDevice.label : "Default Microphone";
+
+  statusText.textContent = `Microphone set to: ${deviceName}`;
+
+  if (isRecording) {
+    statusText.textContent = "Switching microphone... Please wait.";
+    stopRecording().then(() => {
+      setTimeout(() => {
+        toggleRecording();
+      }, 800);
+    });
   }
-  if (!waitingForStop) {
-    recordButton.disabled = false;
+}
+
+async function enumerateMicrophones() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    stream.getTracks().forEach((track) => track.stop());
+
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    availableMicrophones = devices.filter((device) => device.kind === "audioinput");
+    populateMicrophoneSelect();
+  } catch (error) {
+    console.error("Error enumerating microphones:", error);
+    statusText.textContent = "Error accessing microphones. Please grant permission.";
+  }
+}
+
+function populateMicrophoneSelect() {
+  if (!microphoneSelect) return;
+
+  microphoneSelect.innerHTML = '<option value="">Default Microphone</option>';
+
+  availableMicrophones.forEach((device, index) => {
+    const option = document.createElement("option");
+    option.value = device.deviceId;
+    option.textContent = device.label || `Microphone ${index + 1}`;
+    microphoneSelect.appendChild(option);
+  });
+
+  const savedMicId = localStorage.getItem(LOCAL_STORAGE_MIC);
+  if (savedMicId && availableMicrophones.some((mic) => mic.deviceId === savedMicId)) {
+    microphoneSelect.value = savedMicId;
+    selectedMicrophoneId = savedMicId;
+  }
+}
+
+function downloadText(filename, text) {
+  const blob = new Blob([text || ""], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function formatTimestamp() {
+  const now = new Date();
+  const pad = (n) => `${n}`.padStart(2, "0");
+  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+}
+
+function handleSaveNote() {
+  const text = dictationNote.value || "";
+  downloadText(`whisper-note-${formatTimestamp()}.txt`, text);
+  localStorage.setItem(LOCAL_STORAGE_ARCHIVE_KEY, text);
+  persistNote();
+  statusText.textContent = "Note saved locally.";
+}
+
+function handleSaveTranslation() {
+  const text = translationNote.value || "";
+  downloadText(`whisper-translation-${formatTimestamp()}.txt`, text);
+  statusText.textContent = "Translation saved.";
+}
+
+function handleNewNote() {
+  dictationNote.value = "";
+  translationNote.value = "";
+  dictationPreviewText.textContent = "";
+  translationPreviewText.textContent = "";
+  streamControllers.dictation.baseText = "";
+  streamControllers.translation.baseText = "";
+  persistNote();
+  localStorage.removeItem(LOCAL_STORAGE_ARCHIVE_KEY);
+  statusText.textContent = "Started a new note.";
+}
+
+function handleContinueNote() {
+  const saved = localStorage.getItem(LOCAL_STORAGE_ARCHIVE_KEY) || localStorage.getItem(LOCAL_STORAGE_NOTE_KEY);
+  if (saved) {
+    dictationNote.value = saved;
+    streamControllers.dictation.baseText = saved.trimEnd();
+    persistNote();
+    statusText.textContent = "Restored saved note.";
+  } else {
+    statusText.textContent = "No saved note available.";
   }
 }
 
@@ -582,18 +697,78 @@ recordButton.addEventListener("click", toggleRecording);
 if (microphoneSelect) {
   microphoneSelect.addEventListener("change", handleMicrophoneChange);
 }
-document.addEventListener('DOMContentLoaded', async () => {
+
+dictationNote.addEventListener("input", () => {
+  if (!isRecording && !isAnyWaiting()) {
+    streamControllers.dictation.baseText = dictationNote.value.trimEnd();
+    persistNote();
+  }
+});
+
+saveNoteButton.addEventListener("click", handleSaveNote);
+newNoteButton.addEventListener("click", handleNewNote);
+continueNoteButton.addEventListener("click", handleContinueNote);
+saveTranslationButton.addEventListener("click", handleSaveTranslation);
+
+translationToggle.addEventListener("change", () => {
+  translationEnabled = translationToggle.checked;
+  localStorage.setItem(LOCAL_STORAGE_TRANSLATION_ENABLED, translationEnabled ? "1" : "0");
+  translationPane.classList.toggle("is-hidden", !translationEnabled);
+  if (!translationEnabled) {
+    translationPreviewText.textContent = "";
+    closeStream("translation");
+  }
+  updateUI();
+});
+
+websocketInput.addEventListener("change", () => {
+  const value = websocketInput.value.trim();
+  if (!value.startsWith("ws://") && !value.startsWith("wss://")) {
+    statusText.textContent = "Invalid WebSocket URL (must start with ws:// or wss://).";
+    return;
+  }
+  streamControllers.dictation.url = value;
+  statusText.textContent = "Dictation WebSocket updated.";
+});
+
+translationWebsocketInput.addEventListener("change", () => {
+  const value = translationWebsocketInput.value.trim();
+  if (!value.startsWith("ws://") && !value.startsWith("wss://")) {
+    statusText.textContent = "Invalid translation WebSocket URL (must start with ws:// or wss://).";
+    return;
+  }
+  streamControllers.translation.url = value;
+  statusText.textContent = "Translation WebSocket updated.";
+});
+
+window.addEventListener("beforeunload", () => {
+  getActiveModes().forEach((mode) => closeStream(mode));
+  if (recorder) {
+    recorder.stop();
+  }
+});
+
+document.addEventListener("DOMContentLoaded", async () => {
   try {
     await enumerateMicrophones();
   } catch (error) {
-    console.log("Could not enumerate microphones on load:", error);
+    console.warn("Could not enumerate microphones on load", error);
   }
 });
-navigator.mediaDevices.addEventListener('devicechange', async () => {
-  console.log('Device change detected, re-enumerating microphones');
-  try {
-    await enumerateMicrophones();
-  } catch (error) {
-    console.log("Error re-enumerating microphones:", error);
+
+if (navigator.mediaDevices) {
+  const handler = async () => {
+    try {
+      await enumerateMicrophones();
+    } catch (error) {
+      console.log("Error re-enumerating microphones:", error);
+    }
+  };
+  if (navigator.mediaDevices.addEventListener) {
+    navigator.mediaDevices.addEventListener("devicechange", handler);
+  } else {
+    navigator.mediaDevices.ondevicechange = handler;
   }
-});
+}
+
+updateUI();
