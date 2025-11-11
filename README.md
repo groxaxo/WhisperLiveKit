@@ -223,7 +223,7 @@ Using optimized compute types on Ampere GPUs:
 - Minimal accuracy impact (typically <1% difference)
 - Perfect for production deployments requiring low latency
 
-> **Note**: The optimization applies to both `faster-whisper` and `simulstreaming` backends.
+> **Note**: The optimization applies to both `faster-whisper` and `simulstreaming` backends. For detailed benchmarks and troubleshooting, see [AMPERE_OPTIMIZATION.md](AMPERE_OPTIMIZATION.md).
 
 ### 🚀 Deployment Guide
 
