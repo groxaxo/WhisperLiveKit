@@ -120,6 +120,14 @@ def parse_args():
         help="Load only this backend for Whisper processing.",
     )
     parser.add_argument(
+        "--compute-type",
+        type=str,
+        default=None,
+        dest="compute_type",
+        choices=["int8_bfloat16", "int8_float16", "int8", "float16", "bfloat16", "float32", "auto"],
+        help="Compute type for CTranslate2 inference (faster-whisper backend and SimulStreaming encoder). If not set, automatically selects optimal type for your GPU: int8_bfloat16 for Ampere GPUs (A100, RTX 3000/4000), int8_float16 for older GPUs. For CPU use int8.",
+    )
+    parser.add_argument(
         "--no-vac",
         action="store_true",
         default=False,

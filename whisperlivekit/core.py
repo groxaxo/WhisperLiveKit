@@ -34,6 +34,7 @@ class TranscriptionEngine:
             "lan": "auto",
             "task": "transcribe",
             "backend": "faster-whisper",
+            "compute_type": None,  # Auto-detect optimal type, or override (int8_bfloat16, int8_float16, float16, int8, auto)
             "vac": True,
             "vac_chunk_size": 0.04,
             "log_level": "DEBUG",
@@ -97,7 +98,7 @@ class TranscriptionEngine:
                 simulstreaming_kwargs = {}
                 for attr in ['frame_threshold', 'beams', 'decoder_type', 'audio_max_len', 'audio_min_len', 
                             'cif_ckpt_path', 'never_fire', 'init_prompt', 'static_init_prompt', 
-                            'max_context_tokens', 'model_path', 'warmup_file', 'preload_model_count']:
+                            'max_context_tokens', 'model_path', 'warmup_file', 'preload_model_count', 'compute_type']:
                     if hasattr(self.args, attr):
                         simulstreaming_kwargs[attr] = getattr(self.args, attr)
         

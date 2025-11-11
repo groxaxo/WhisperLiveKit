@@ -244,6 +244,7 @@ class SimulStreamingASR():
         self.max_context_tokens = kwargs.get('max_context_tokens', None)
         self.warmup_file = kwargs.get('warmup_file', None)
         self.preload_model_count = kwargs.get('preload_model_count', 1)
+        self.compute_type = kwargs.get('compute_type', None)
         
         if model_dir is not None:
             self.model_path = model_dir
@@ -297,11 +298,18 @@ class SimulStreamingASR():
             mlx_model_name = mlx_model_mapping[self.model_name]
             self.mlx_encoder = load_mlx_encoder(path_or_hf_repo=mlx_model_name)
         elif HAS_FASTER_WHISPER:
-            print('Simulstreaming will use Faster Whisper for the encoder.')
+            from whisperlivekit.gpu_utils import get_optimal_compute_type
+            # Use override if provided, otherwise auto-detect
+            if self.compute_type is not None:
+                optimal_compute_type = self.compute_type
+                print(f'Simulstreaming will use Faster Whisper for the encoder with manually specified compute_type={optimal_compute_type}.')
+            else:
+                optimal_compute_type = get_optimal_compute_type('auto')
+                print(f'Simulstreaming will use Faster Whisper for the encoder with auto-detected compute_type={optimal_compute_type}.')
             self.fw_encoder = WhisperModel(
                 self.model_name,
                 device='auto',
-                compute_type='auto',
+                compute_type=optimal_compute_type,
             )
 
     def load_model(self):

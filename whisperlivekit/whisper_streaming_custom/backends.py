@@ -11,9 +11,10 @@ class ASRBase:
     sep = " "  # join transcribe words with this character (" " for whisper_timestamped,
               # "" for faster-whisper because it emits the spaces when needed)
 
-    def __init__(self, lan, modelsize=None, cache_dir=None, model_dir=None, logfile=sys.stderr):
+    def __init__(self, lan, modelsize=None, cache_dir=None, model_dir=None, compute_type=None, logfile=sys.stderr):
         self.logfile = logfile
         self.transcribe_kargs = {}
+        self.compute_type = compute_type  # Optional compute type override
         if lan == "auto":
             self.original_language = None
         else:
@@ -90,6 +91,7 @@ class FasterWhisperASR(ASRBase):
 
     def load_model(self, modelsize=None, cache_dir=None, model_dir=None):
         from faster_whisper import WhisperModel
+        from whisperlivekit.gpu_utils import get_optimal_compute_type, log_gpu_info
 
         if model_dir is not None:
             logger.debug(f"Loading whisper model from model_dir {model_dir}. "
@@ -99,9 +101,18 @@ class FasterWhisperASR(ASRBase):
             model_size_or_path = modelsize
         else:
             raise ValueError("Either modelsize or model_dir must be set")
-        device = "auto" # Allow CTranslate2 to decide available device
-        compute_type = "auto" # Allow CTranslate2 to decide faster compute type
-                              
+        
+        device = "auto"  # Allow CTranslate2 to decide available device
+        
+        # Use override if provided, otherwise auto-detect optimal compute type
+        if self.compute_type is not None:
+            compute_type = self.compute_type
+            logger.info(f"Using manually specified compute_type={compute_type}")
+        else:
+            compute_type = get_optimal_compute_type(device)
+            logger.info(f"Using auto-detected compute_type={compute_type} for faster-whisper")
+        
+        log_gpu_info()
 
         model = WhisperModel(
             model_size_or_path,
