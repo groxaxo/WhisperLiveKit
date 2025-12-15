@@ -24,8 +24,6 @@ async def lifespan(app: FastAPI):
     transcription_engine = TranscriptionEngine(
         **vars(args),
     )
-    # Register OpenAI-compatible API routes for Open WebUI integration
-    create_openai_routes(app, transcription_engine)
     yield
 
 app = FastAPI(lifespan=lifespan)
@@ -36,6 +34,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Register OpenAI-compatible API routes for Open WebUI integration
+# Note: The actual transcription_engine is initialized during lifespan startup
+# but routes can be registered immediately and will use it when called
+from whisperlivekit.openai_api import create_openai_routes_deferred
+create_openai_routes_deferred(app, lambda: transcription_engine)
 
 @app.get("/")
 async def get():
