@@ -8,6 +8,7 @@ from fastapi.responses import HTMLResponse
 
 from whisperlivekit import (AudioProcessor, TranscriptionEngine,
                             get_inline_ui_html, parse_args)
+from whisperlivekit.openai_api import create_openai_routes
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logging.getLogger().setLevel(logging.WARNING)
@@ -23,6 +24,8 @@ async def lifespan(app: FastAPI):
     transcription_engine = TranscriptionEngine(
         **vars(args),
     )
+    # Register OpenAI-compatible API routes for Open WebUI integration
+    create_openai_routes(app, transcription_engine)
     yield
 
 app = FastAPI(lifespan=lifespan)
