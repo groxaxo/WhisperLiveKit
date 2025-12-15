@@ -23,6 +23,24 @@ WhisperLiveKit now provides an OpenAI Whisper API-compatible endpoint that can b
 
 ## Quick Start
 
+### Super Quick Start with Docker Compose 🚀
+
+The easiest way to get started is using our pre-configured Docker Compose setup:
+
+```bash
+# Clone the repository (if you haven't already)
+git clone https://github.com/QuentinFuxa/WhisperLiveKit.git
+cd WhisperLiveKit
+
+# Run the quick start script
+chmod +x scripts/quickstart-openwebui.sh
+./scripts/quickstart-openwebui.sh
+```
+
+This will start both WhisperLiveKit and Open WebUI with proper configuration. Access Open WebUI at `http://localhost:3000`.
+
+### Manual Setup
+
 ### 1. Start WhisperLiveKit Server
 
 Start the WhisperLiveKit server with your desired configuration:
@@ -258,7 +276,27 @@ docker run -p 8000:8000 \
 
 ### Docker Compose Example
 
-Create a `docker-compose.yml` file:
+We provide a ready-to-use Docker Compose configuration. Create a `docker-compose.openwebui.yml` file or use the one included in the repository:
+
+```bash
+# Start both services
+docker compose -f docker-compose.openwebui.yml up -d
+
+# View logs
+docker compose -f docker-compose.openwebui.yml logs -f
+
+# Stop services
+docker compose -f docker-compose.openwebui.yml down
+```
+
+Or use the provided quick start script:
+
+```bash
+chmod +x scripts/quickstart-openwebui.sh
+./scripts/quickstart-openwebui.sh
+```
+
+The Docker Compose file (included in the repository as `docker-compose.openwebui.yml`) configures both services with proper networking and environment variables.
 
 ```yaml
 version: '3.8'

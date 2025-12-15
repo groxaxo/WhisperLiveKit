@@ -1,0 +1,91 @@
+version: '3.8'
+
+services:
+  # WhisperLiveKit transcription service
+  whisperlivekit:
+    build: .
+    container_name: whisperlivekit
+    ports:
+      - "8000:8000"
+    command: >
+      --model base
+      --language en
+      --host 0.0.0.0
+      --port 8000
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - openwebui_network
+
+  # Open WebUI - AI chat interface
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: open-webui
+    ports:
+      - "3000:8080"
+    environment:
+      # STT Configuration - points to WhisperLiveKit
+      - AUDIO_STT_ENGINE=openai
+      - AUDIO_STT_OPENAI_API_BASE_URL=http://whisperlivekit:8000/v1
+      - AUDIO_STT_OPENAI_API_KEY=wlk-key
+      - AUDIO_STT_MODEL=whisper-1
+      
+      # Optional: Configure other Open WebUI settings
+      - ENABLE_SIGNUP=true
+      - DEFAULT_MODELS=gpt-3.5-turbo
+    volumes:
+      - open-webui-data:/app/backend/data
+    depends_on:
+      whisperlivekit:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - openwebui_network
+
+networks:
+  openwebui_network:
+    driver: bridge
+
+volumes:
+  open-webui-data:
+    driver: local
+
+# Usage:
+# 1. Build and start services:
+#    docker-compose up -d
+#
+# 2. Access Open WebUI:
+#    http://localhost:3000
+#
+# 3. Access WhisperLiveKit directly:
+#    http://localhost:8000
+#
+# 4. To stop services:
+#    docker-compose down
+#
+# 5. To view logs:
+#    docker-compose logs -f whisperlivekit
+#    docker-compose logs -f open-webui
+#
+# Customization:
+# - Change the Whisper model: edit the --model parameter (tiny, base, small, medium, large-v3)
+# - Change language: edit the --language parameter (en, fr, es, etc.)
+# - Enable diarization: add --diarization to the command
+# - Change ports: edit the ports mapping
+#
+# For CPU-only deployment, use Dockerfile.cpu instead:
+#   build:
+#     context: .
+#     dockerfile: Dockerfile.cpu
+#   (and remove the deploy: section)
