@@ -8,7 +8,7 @@ from fastapi.responses import HTMLResponse
 
 from whisperlivekit import (AudioProcessor, TranscriptionEngine,
                             get_inline_ui_html, parse_args)
-from whisperlivekit.openai_api import create_openai_routes
+from whisperlivekit.openai_api import create_openai_routes_deferred
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logging.getLogger().setLevel(logging.WARNING)

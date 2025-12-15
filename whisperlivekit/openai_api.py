@@ -18,6 +18,13 @@ from fastapi.responses import PlainTextResponse, JSONResponse
 
 from whisperlivekit.core import TranscriptionEngine
 
+# Try to import librosa for resampling, but it's optional
+try:
+    import librosa
+    LIBROSA_AVAILABLE = True
+except ImportError:
+    LIBROSA_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -156,11 +163,10 @@ async def _process_transcription(
         
         # Resample to 16kHz if needed
         if sample_rate != 16000:
-            try:
-                import librosa
+            if LIBROSA_AVAILABLE:
                 audio_data = librosa.resample(audio_data, orig_sr=sample_rate, target_sr=16000)
                 sample_rate = 16000
-            except ImportError:
+            else:
                 logger.warning("librosa not available, using original sample rate")
         
         logger.info(f"Loaded audio: duration={len(audio_data)/sample_rate:.2f}s, sample_rate={sample_rate}")
@@ -257,36 +263,13 @@ async def transcribe_audio_simple(
                     "duration": duration
                 }
         
-        # Fallback: use faster-whisper if available
-        try:
-            from faster_whisper import WhisperModel
-            
-            # Try to create a temporary model instance
-            model_size = getattr(engine.args, 'model_size', 'base')
-            temp_model = WhisperModel(model_size, device="cpu", compute_type="int8")
-            
-            segments, info = temp_model.transcribe(
-                audio_data,
-                language=language if language else None
-            )
-            
-            # Collect all segments
-            text_parts = []
-            for segment in segments:
-                text_parts.append(segment.text)
-            
-            return {
-                "text": " ".join(text_parts).strip(),
-                "language": info.language if hasattr(info, 'language') else language,
-                "duration": duration
-            }
-        except ImportError:
-            logger.warning("faster-whisper not available")
+        # If we can't access the model directly, return a helpful message
+        logger.warning("Could not access underlying Whisper model for batch transcription")
+        logger.warning("The streaming engine doesn't support batch file transcription")
+        logger.warning("Consider using a direct Whisper model instance or OpenAI API for file transcription")
         
-        # Final fallback: return empty transcription
-        logger.warning("No suitable transcription method found, returning empty result")
         return {
-            "text": "",
+            "text": "[Error: Batch transcription not available with current configuration]",
             "language": language,
             "duration": duration
         }
@@ -294,7 +277,7 @@ async def transcribe_audio_simple(
     except Exception as e:
         logger.error(f"Error in batch transcription: {str(e)}", exc_info=True)
         return {
-            "text": "",
+            "text": f"[Transcription error: {str(e)}]",
             "language": language,
             "duration": len(audio_data) / sample_rate if sample_rate > 0 else 0
         }
