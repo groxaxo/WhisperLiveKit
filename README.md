@@ -68,6 +68,21 @@ Go to `chrome-extension` for instructions.
 </p>
 
 
+#### 🔌 Open WebUI Integration
+
+WhisperLiveKit provides an **OpenAI-compatible API endpoint** for seamless integration with [Open WebUI](https://github.com/open-webui/open-webui) and other compatible applications.
+
+**Quick Setup:**
+1. Start WhisperLiveKit: `wlk --model base --language en --host 0.0.0.0`
+2. In Open WebUI → Admin Settings → Audio:
+   - Set **STT Engine** to "OpenAI"
+   - Set **API Base URL** to `http://localhost:8000/v1`
+   - Set **API Key** to any string (e.g., "wlk-key")
+   - Set **STT Model** to "whisper-1"
+3. Click the microphone in Open WebUI to start transcribing!
+
+📖 **[Complete Integration Guide →](OPEN_WEBUI_INTEGRATION.md)**
+
 
 #### Optional Dependencies
 

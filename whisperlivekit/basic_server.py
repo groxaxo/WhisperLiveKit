@@ -8,6 +8,7 @@ from fastapi.responses import HTMLResponse
 
 from whisperlivekit import (AudioProcessor, TranscriptionEngine,
                             get_inline_ui_html, parse_args)
+from whisperlivekit.openai_api import create_openai_routes_deferred
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logging.getLogger().setLevel(logging.WARNING)
@@ -33,6 +34,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Register OpenAI-compatible API routes for Open WebUI integration
+# Note: The actual transcription_engine is initialized during lifespan startup
+# but routes can be registered immediately and will use it when called
+from whisperlivekit.openai_api import create_openai_routes_deferred
+create_openai_routes_deferred(app, lambda: transcription_engine)
 
 @app.get("/")
 async def get():
