@@ -11,6 +11,7 @@ from whisperlivekit.model_paths import detect_model_format, resolve_model_path
 from whisperlivekit.timed_objects import ASRToken
 from whisperlivekit.whisper.transcribe import transcribe as whisper_transcribe
 from whisperlivekit.backend_support import whispercpp_backend_available
+from whisperlivekit.libwhisper import WhisperCpp
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +21,102 @@ try:
     HAS_PYWHISPERCPP = True
 except ImportError:
     HAS_PYWHISPERCPP = False
+
+class LibWhisperParamsWrapper:
+    def __init__(self, params):
+        self.params = params
+
+    def with_n_threads(self, n):
+        self.params.n_threads = n
+        return self
+
+    def with_beam_size(self, n):
+        self.params.beam_size = n
+        return self
+
+    def with_best_of(self, n):
+        self.params.best_of = n
+        return self
+
+    def with_temperature_inc(self, val):
+        self.params.temperature_inc = val
+        return self
+
+    def with_n_max_text_ctx(self, n):
+        self.params.n_max_text_ctx = n
+        return self
+
+    def with_token_timestamps(self, val):
+        self.params.token_timestamps = val
+        return self
+
+    def with_timestamps(self, val):
+        self.params.no_timestamps = not val
+        return self
+
+    def with_max_len(self, n):
+        self.params.max_len = n
+        return self
+
+    def with_no_context(self, val):
+        self.params.no_context = val
+        return self
+
+    def with_language(self, lang):
+        if lang == "auto":
+            self.params.language = None
+            self.params.detect_language = True
+        else:
+            self.params.language = lang.encode('utf-8')
+        return self
+    
+    def set_tokens(self, tokens):
+        # TODO: implement in libwhisper.py if needed
+        pass
+
+class LibWhisperContextWrapper:
+    def __init__(self, model_path):
+        self.w = WhisperCpp(model_path)
+        
+    def full(self, params, audio):
+        real_params = params.params if isinstance(params, LibWhisperParamsWrapper) else params
+        return self.w.full(audio, real_params)
+        
+    def full_lang_id(self):
+        return self.w.full_lang_id()
+        
+    def lang_id_to_str(self, lang_id):
+        return self.w.lang_id_to_str(lang_id)
+        
+    def full_n_segments(self):
+        return self.w.n_segments()
+        
+    def full_get_segment_text(self, s):
+        return self.w.get_segment_text(s)
+        
+    def full_get_segment_start(self, s):
+        return self.w.get_segment_t0(s)
+        
+    def full_get_segment_end(self, s):
+        return self.w.get_segment_t1(s)
+        
+    def full_n_tokens(self, s):
+        return self.w.n_tokens(s)
+        
+    def full_get_token_text(self, s, i):
+        return self.w.get_token_text(s, i)
+        
+    def full_get_token_data(self, s, i):
+        return self.w.get_token_data(s, i)
+        
+    def tokenize(self, text, n_max):
+        return self.w.tokenize(text, n_max)
+
+    def openvino_init(self, model_path, device, cache_dir):
+        return self.w.init_openvino(model_path, device, cache_dir)
+
+    def get_full_params(self):
+        return self.w.get_full_params()
 
 class PyWhisperCppParamsWrapper:
     def __init__(self, params):
@@ -466,8 +563,17 @@ class WhisperCppASR(ASRBase):
             )
 
     def load_model(self, model_size=None, cache_dir=None, model_dir=None):
+        # We prefer our own LibWhisper wrapper as it is guaranteed to have the 
+        # features we need (like OpenVINO) if we built it ourselves.
+        try:
+            from whisperlivekit.libwhisper import lib
+            if lib is not None:
+                return self._load_libwhisper(model_size, cache_dir, model_dir)
+        except Exception as e:
+            logger.debug(f"LibWhisper not available, falling back to other bindings: {e}")
+
         if not whispercpp_backend_available(warn_on_missing=True):
-            raise ImportError("whispercpp is not installed. Install with: pip install whispercpp")
+            raise ImportError("whispercpp is not installed and libwhisper.so not found. Install with: pip install whispercpp")
 
         # Determine which backend to use
         use_pywhispercpp = False
@@ -490,7 +596,7 @@ class WhisperCppASR(ASRBase):
         
         if use_pywhispercpp:
             return self._load_pywhispercpp(model_size, cache_dir, model_dir)
-
+        
         # Standard whispercpp path
         from whispercpp import api, Whisper
         self._api = api
@@ -534,6 +640,27 @@ class WhisperCppASR(ASRBase):
         # Attempt OpenVINO initialization if requested
         self._init_openvino_if_available()
         
+        return self._ctx
+
+    def _load_libwhisper(self, model_size, cache_dir, model_dir):
+        ggml_file = None
+        if model_dir:
+            resolved = resolve_model_path(model_dir)
+            if resolved.is_file():
+                ggml_file = str(resolved)
+            elif resolved.is_dir():
+                for f in resolved.iterdir():
+                    if f.is_file() and f.name.lower().startswith("ggml") and f.suffix.lower() == ".bin":
+                        ggml_file = str(f)
+                        break
+        
+        if not ggml_file:
+             raise ValueError("Could not find model file for libwhisper. Please provide --model-dir with a GGML model.")
+             
+        self._ctx = LibWhisperContextWrapper(ggml_file)
+        self._params = LibWhisperParamsWrapper(self._ctx.get_full_params())
+        
+        self._init_openvino_if_available()
         return self._ctx
 
     def _load_pywhispercpp(self, model_size, cache_dir, model_dir):

@@ -133,7 +133,7 @@ For Intel systems with integrated graphics (e.g., Iris Xe on 12th gen+), you can
 ### Prerequisites
 
 1. **Intel OpenVINO Runtime**: Install from [Intel's OpenVINO toolkit](https://www.intel.com/content/www/us/en/developer/tools/openvino-toolkit/overview.html)
-2. **OpenVINO-enabled whisper.cpp bindings**: The default pip `whispercpp` does NOT include OpenVINO support. You need custom bindings built with OpenVINO.
+2. **libwhisper.so with OpenVINO**: WhisperLiveKit includes a built-in `ctypes` wrapper. To use it, you must build `libwhisper.so` from the included `whispercpp_official` submodule with OpenVINO enabled.
 3. **OpenVINO encoder XML file**: Generated from the Whisper model
 
 ### Generating OpenVINO Encoder Files
@@ -155,6 +155,19 @@ python models/convert-whisper-to-openvino.py \
 This creates:
 - `large-v3-turbo-encoder-openvino.xml`
 - `large-v3-turbo-encoder-openvino.bin`
+
+### Building libwhisper.so with OpenVINO
+
+To use the built-in OpenVINO support, build the shared library:
+
+```bash
+cd whispercpp_official
+mkdir build && cd build
+cmake .. -DWHISPER_OPENVINO=1 -DBUILD_SHARED_LIBS=ON
+make -j$(nproc) whisper
+```
+
+The resulting `libwhisper.so` should be located at `whispercpp_official/build/src/libwhisper.so`. WhisperLiveKit will automatically detect and use it.
 
 ### CLI Usage
 
