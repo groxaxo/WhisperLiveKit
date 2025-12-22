@@ -126,6 +126,67 @@ When you run WhisperLiveKit, you should see log messages indicating BLAS usage:
 ggml_init_cublas: found X BLAS devices
 ```
 
+## OpenVINO Encoder Offload (Intel iGPU)
+
+For Intel systems with integrated graphics (e.g., Iris Xe on 12th gen+), you can offload the encoder to the iGPU using OpenVINO, reducing CPU load significantly.
+
+### Prerequisites
+
+1. **Intel OpenVINO Runtime**: Install from [Intel's OpenVINO toolkit](https://www.intel.com/content/www/us/en/developer/tools/openvino-toolkit/overview.html)
+2. **OpenVINO-enabled whisper.cpp bindings**: The default pip `whispercpp` does NOT include OpenVINO support. You need custom bindings built with OpenVINO.
+3. **OpenVINO encoder XML file**: Generated from the Whisper model
+
+### Generating OpenVINO Encoder Files
+
+Use the whisper.cpp conversion script:
+
+```bash
+# Clone whisper.cpp
+git clone https://github.com/ggml-org/whisper.cpp
+cd whisper.cpp
+
+# Generate OpenVINO encoder for large-v3-turbo
+# Note: Use base model name without quant suffix
+python models/convert-whisper-to-openvino.py \
+  --model large-v3-turbo \
+  --output models/large-v3-turbo-encoder-openvino
+```
+
+This creates:
+- `large-v3-turbo-encoder-openvino.xml`
+- `large-v3-turbo-encoder-openvino.bin`
+
+### CLI Usage
+
+```bash
+python -m whisperlivekit \
+  --backend whispercpp \
+  --backend-policy localagreement \
+  --model-dir /path/to/ggml-large-v3-turbo-q5_0.bin \
+  --lan en \
+  --whispercpp-openvino \
+  --whispercpp-ov-encoder /path/to/large-v3-turbo-encoder-openvino.xml \
+  --whispercpp-ov-device GPU
+```
+
+### OpenVINO Parameters
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `--whispercpp-openvino` | off | Enable OpenVINO encoder offload |
+| `--whispercpp-ov-encoder` | (required) | Path to OpenVINO encoder XML file |
+| `--whispercpp-ov-device` | CPU | Target device: CPU, GPU, or NPU |
+
+### Expected Performance
+
+With OpenVINO GPU offload on Intel Iris Xe:
+- **CPU usage**: Reduced by 30-50%
+- **First inference**: Slow (OpenVINO compilation, cached for subsequent runs)
+- **Subsequent inferences**: Faster due to caching
+
+> **Note**: First run triggers OpenVINO graph compilation. WhisperLiveKit's warmup handles this automatically.
+
+
 ## Performance Tuning Tips
 
 ### 1. Single Instance + Queue

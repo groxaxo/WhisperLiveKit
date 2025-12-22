@@ -272,6 +272,30 @@ def parse_args():
         help="Rolling window length in milliseconds. Default: 5000ms (5 seconds).",
     )
     
+    # OpenVINO encoder offload (Intel iGPU acceleration)
+    whispercpp_group.add_argument(
+        "--whispercpp-openvino",
+        action="store_true",
+        default=False,
+        dest="whispercpp_openvino",
+        help="Enable OpenVINO encoder offload (requires whisper.cpp built with OpenVINO support).",
+    )
+    whispercpp_group.add_argument(
+        "--whispercpp-ov-encoder",
+        type=str,
+        default=None,
+        dest="whispercpp_ov_encoder",
+        help="Path to OpenVINO encoder XML file (required when --whispercpp-openvino is set).",
+    )
+    whispercpp_group.add_argument(
+        "--whispercpp-ov-device",
+        type=str,
+        default="CPU",
+        choices=["CPU", "GPU", "NPU"],
+        dest="whispercpp_ov_device",
+        help="OpenVINO device for encoder: CPU, GPU (Intel iGPU), or NPU. Default: CPU.",
+    )
+    
     # SimulStreaming-specific arguments
     simulstreaming_group = parser.add_argument_group('SimulStreaming arguments (only used with --backend simulstreaming)')
 

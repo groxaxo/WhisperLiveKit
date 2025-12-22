@@ -309,6 +309,8 @@ class WhisperCppASR(ASRBase):
     whisper.cpp backend via whispercpp Python bindings.
     Works with LocalAgreement (not SimulStreaming).
     Optimized for realtime transcription with low CPU usage.
+    
+    Supports OpenVINO encoder offload for Intel iGPU acceleration.
     """
     sep = ""
 
@@ -317,7 +319,9 @@ class WhisperCppASR(ASRBase):
     def __init__(self, lan, model_size=None, cache_dir=None, model_dir=None, 
                  threads=8, beam_size=1, best_of=1, no_fallback=False,
                  max_context=-1, no_timestamps=False, max_len=0,
-                 step_ms=500, window_ms=5000, **kwargs):
+                 step_ms=500, window_ms=5000,
+                 openvino=False, ov_encoder=None, ov_device="CPU",
+                 **kwargs):
         # Store performance parameters
         self.threads = threads
         self.beam_size = beam_size
@@ -329,6 +333,17 @@ class WhisperCppASR(ASRBase):
         self.step_ms = step_ms
         self.window_ms = window_ms
         
+        # OpenVINO parameters
+        self.openvino = openvino
+        self.ov_encoder = ov_encoder
+        self.ov_device = ov_device
+        
+        # Validate OpenVINO configuration
+        if self.openvino and not self.ov_encoder:
+            raise ValueError(
+                "--whispercpp-openvino requires --whispercpp-ov-encoder (path to encoder XML)"
+            )
+        
         # Call parent init
         super().__init__(lan, model_size, cache_dir, model_dir, **kwargs)
         
@@ -338,6 +353,12 @@ class WhisperCppASR(ASRBase):
             f"no_timestamps={no_timestamps}, max_len={max_len}, "
             f"step_ms={step_ms}, window_ms={window_ms}"
         )
+        
+        if self.openvino:
+            logger.info(
+                f"OpenVINO encoder offload requested: device={self.ov_device}, "
+                f"encoder={self.ov_encoder}"
+            )
 
     def load_model(self, model_size=None, cache_dir=None, model_dir=None):
         if not whispercpp_backend_available(warn_on_missing=True):
@@ -368,6 +389,10 @@ class WhisperCppASR(ASRBase):
 
             self._ctx = api.Context.from_file(str(ggml_file))
             self._params = api.Params.from_enum(api.SAMPLING_GREEDY).build()
+            
+            # Attempt OpenVINO initialization if requested
+            self._init_openvino_if_available()
+            
             return self._ctx  # stored in self._ctx
 
         # Otherwise, allow whispercpp to download a converted model by name (tiny/base/small/...)
@@ -377,7 +402,45 @@ class WhisperCppASR(ASRBase):
         w = Whisper.from_pretrained(model_size, basedir=cache_dir)
         self._ctx = w.context
         self._params = w.params
+        
+        # Attempt OpenVINO initialization if requested
+        self._init_openvino_if_available()
+        
         return self._ctx
+    
+    def _init_openvino_if_available(self):
+        """
+        Attempt to initialize OpenVINO encoder offload.
+        
+        Note: The current whispercpp Python bindings (by aarnphm) do not expose
+        whisper_openvino_init(). This method is a placeholder that logs the status
+        and will work when bindings add support.
+        """
+        if not self.openvino:
+            return
+        
+        # Check if the bindings expose openvino_init
+        if hasattr(self._ctx, 'openvino_init'):
+            try:
+                success = self._ctx.openvino_init(
+                    self.ov_encoder,
+                    self.ov_device,
+                    ""  # cache_dir - empty string for default
+                )
+                if success:
+                    logger.info(f"OpenVINO encoder initialized successfully on {self.ov_device}")
+                else:
+                    logger.warning("OpenVINO encoder initialization returned False")
+            except Exception as e:
+                logger.error(f"OpenVINO initialization failed: {e}")
+        else:
+            # Current bindings don't expose the function
+            logger.warning(
+                "OpenVINO encoder offload requested but current whispercpp bindings "
+                "do not expose openvino_init(). OpenVINO will NOT be used. "
+                "To enable OpenVINO, use bindings that expose whisper_openvino_init() "
+                "or build custom bindings with OpenVINO support."
+            )
 
     def _configure_params(self, init_prompt: str):
         p = self._params

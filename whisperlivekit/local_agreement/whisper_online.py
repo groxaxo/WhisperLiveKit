@@ -97,6 +97,10 @@ def backend_factory(
             whispercpp_max_len=0,
             whispercpp_step_ms=500,
             whispercpp_window_ms=5000,
+            # WhisperCpp OpenVINO parameters
+            whispercpp_openvino=False,
+            whispercpp_ov_encoder=None,
+            whispercpp_ov_device="CPU",
         ):
     backend_choice = backend
     custom_reference = model_path or model_dir
@@ -174,6 +178,10 @@ def backend_factory(
                 "max_len": whispercpp_max_len,
                 "step_ms": whispercpp_step_ms,
                 "window_ms": whispercpp_window_ms,
+                # OpenVINO encoder offload
+                "openvino": whispercpp_openvino,
+                "ov_encoder": whispercpp_ov_encoder,
+                "ov_device": whispercpp_ov_device,
             })
         
         asr = asr_cls(**asr_kwargs)
