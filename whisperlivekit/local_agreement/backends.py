@@ -13,6 +13,111 @@ from whisperlivekit.whisper.transcribe import transcribe as whisper_transcribe
 from whisperlivekit.backend_support import whispercpp_backend_available
 
 logger = logging.getLogger(__name__)
+
+# Check for pywhispercpp (OpenVINO friendly backend)
+try:
+    import _pywhispercpp as pw
+    HAS_PYWHISPERCPP = True
+except ImportError:
+    HAS_PYWHISPERCPP = False
+
+class PyWhisperCppParamsWrapper:
+    def __init__(self, params):
+        self.params = params
+
+    def with_n_threads(self, n):
+        self.params.n_threads = n
+        return self
+
+    def with_beam_size(self, n):
+        if hasattr(self.params, 'beam_search'):
+             self.params.beam_search.beam_size = n
+        return self
+
+    def with_best_of(self, n):
+        if hasattr(self.params, 'greedy'):
+             self.params.greedy.best_of = n
+        return self
+
+    def with_temperature_inc(self, val):
+        self.params.temperature_inc = val
+        return self
+
+    def with_n_max_text_ctx(self, n):
+        self.params.n_max_text_ctx = n
+        return self
+
+    def with_token_timestamps(self, val):
+        self.params.token_timestamps = val
+        return self
+
+    def with_timestamps(self, val):
+        # pywhispercpp doesn't expose 'print_timestamps' in the same way for logic
+        # but token_timestamps handles the timing info we need
+        return self
+
+    def with_max_len(self, n):
+        self.params.max_len = n
+        return self
+
+    def with_no_context(self, val):
+        self.params.no_context = val
+        return self
+
+    def with_language(self, lang):
+        self.params.language = lang
+        return self
+    
+    def set_tokens(self, tokens):
+        pass
+
+class PyWhisperCppContextWrapper:
+    def __init__(self, ctx):
+        self.ctx = ctx
+        
+    def full(self, params, audio):
+        real_params = params.params if isinstance(params, PyWhisperCppParamsWrapper) else params
+        return pw.whisper_full(self.ctx, real_params, audio, audio.size)
+        
+    def full_lang_id(self):
+        return pw.whisper_full_lang_id(self.ctx)
+        
+    def lang_id_to_str(self, lang_id):
+        return pw.whisper_lang_str(lang_id)
+        
+    def full_n_segments(self):
+        return pw.whisper_full_n_segments(self.ctx)
+        
+    def full_get_segment_text(self, s):
+        res = pw.whisper_full_get_segment_text(self.ctx, s)
+        if isinstance(res, bytes):
+            return res.decode('utf-8', errors='ignore')
+        return res
+        
+    def full_get_segment_start(self, s):
+        return pw.whisper_full_get_segment_t0(self.ctx, s)
+        
+    def full_get_segment_end(self, s):
+        return pw.whisper_full_get_segment_t1(self.ctx, s)
+        
+    def full_n_tokens(self, s):
+        return pw.whisper_full_n_tokens(self.ctx, s)
+        
+    def full_get_token_text(self, s, i):
+        res = pw.whisper_full_get_token_text(self.ctx, s, i)
+        if isinstance(res, bytes):
+            return res.decode('utf-8', errors='ignore')
+        return res
+        
+    def full_get_token_data(self, s, i):
+        return pw.whisper_full_get_token_data(self.ctx, s, i)
+        
+    def tokenize(self, text, n_max):
+        return pw.whisper_tokenize(self.ctx, text, n_max)
+
+    def openvino_init(self, model_path, device, cache_dir):
+        return pw.whisper_ctx_init_openvino_encoder(self.ctx, model_path, device, cache_dir)
+
 class ASRBase:
     sep = " "  # join transcribe words with this character (" " for whisper_timestamped,
               # "" for faster-whisper because it emits the spaces when needed)
@@ -364,6 +469,29 @@ class WhisperCppASR(ASRBase):
         if not whispercpp_backend_available(warn_on_missing=True):
             raise ImportError("whispercpp is not installed. Install with: pip install whispercpp")
 
+        # Determine which backend to use
+        use_pywhispercpp = False
+        has_whispercpp = False
+        try:
+            from whispercpp import api, Whisper
+            self._api = api
+            has_whispercpp = True
+        except ImportError:
+            has_whispercpp = False
+
+        if HAS_PYWHISPERCPP:
+            if not has_whispercpp:
+                use_pywhispercpp = True
+            elif self.openvino:
+                # If OpenVINO requested, check if standard backend supports it
+                if has_whispercpp and not hasattr(api.Context, 'openvino_init'):
+                    logger.info("Standard whispercpp lacks OpenVINO support; switching to pywhispercpp.")
+                    use_pywhispercpp = True
+        
+        if use_pywhispercpp:
+            return self._load_pywhispercpp(model_size, cache_dir, model_dir)
+
+        # Standard whispercpp path
         from whispercpp import api, Whisper
         self._api = api
 
@@ -406,6 +534,38 @@ class WhisperCppASR(ASRBase):
         # Attempt OpenVINO initialization if requested
         self._init_openvino_if_available()
         
+        return self._ctx
+
+    def _load_pywhispercpp(self, model_size, cache_dir, model_dir):
+        ggml_file = None
+        if model_dir:
+            resolved = resolve_model_path(model_dir)
+            if resolved.is_file():
+                ggml_file = str(resolved)
+            elif resolved.is_dir():
+                for f in resolved.iterdir():
+                    if f.is_file() and f.name.lower().startswith("ggml") and f.suffix.lower() == ".bin":
+                        ggml_file = str(f)
+                        break
+        
+        if not ggml_file and model_size:
+             try:
+                 from pywhispercpp.utils import download_model
+                 ggml_file = download_model(model_size, cache_dir)
+             except ImportError:
+                 pass
+        
+        if not ggml_file:
+             raise ValueError("Could not find model file for pywhispercpp (and auto-download failed). Please provide --model-dir.")
+             
+        ctx_ptr = pw.whisper_init_from_file(ggml_file)
+        self._ctx = PyWhisperCppContextWrapper(ctx_ptr)
+        
+        strategy = pw.whisper_sampling_strategy.WHISPER_SAMPLING_GREEDY
+        raw_params = pw.whisper_full_default_params(strategy)
+        self._params = PyWhisperCppParamsWrapper(raw_params)
+        
+        self._init_openvino_if_available()
         return self._ctx
     
     def _init_openvino_if_available(self):
