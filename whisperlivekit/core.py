@@ -136,6 +136,10 @@ class TranscriptionEngine:
                     "whispercpp_max_len": 0,
                     "whispercpp_step_ms": 500,
                     "whispercpp_window_ms": 5000,
+                    # WhisperCpp OpenVINO parameters
+                    "whispercpp_openvino": False,
+                    "whispercpp_ov_encoder": None,
+                    "whispercpp_ov_device": "CPU",
                 }
                 whisperstreaming_params = update_with_kwargs(whisperstreaming_params, kwargs)
                 
