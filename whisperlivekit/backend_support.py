@@ -39,3 +39,10 @@ def faster_backend_available(warn_on_missing = False):
             + "=" * 50
         )
     return available
+
+
+def whispercpp_backend_available(warn_on_missing=False):
+    available = module_available("whispercpp")
+    if not available and warn_on_missing:
+        logger.warning("whispercpp not found. Install with: pip install whispercpp")
+    return available

@@ -8,12 +8,15 @@ from functools import lru_cache
 import librosa
 import numpy as np
 
-from whisperlivekit.backend_support import (faster_backend_available,
-                                            mlx_backend_available)
+from whisperlivekit.backend_support import (
+    faster_backend_available,
+    mlx_backend_available,
+    whispercpp_backend_available,
+)
 from whisperlivekit.model_paths import detect_model_format, resolve_model_path
 from whisperlivekit.warmup import warmup_asr
 
-from .backends import FasterWhisperASR, MLXWhisper, OpenaiApiASR, WhisperASR
+from .backends import FasterWhisperASR, MLXWhisper, OpenaiApiASR, WhisperASR, WhisperCppASR
 
 logger = logging.getLogger(__name__)
 
@@ -124,6 +127,10 @@ def backend_factory(
             if resolved_root is not None and not resolved_root.is_dir():
                 raise ValueError("MLX Whisper backend expects a directory containing MLX weights.")
             model_override = str(resolved_root) if resolved_root is not None else None
+        elif backend_choice == "whispercpp":
+            asr_cls = WhisperCppASR
+            # whisper.cpp backend expects a GGML/GGUF file (or a dir containing one)
+            model_override = str(resolved_root) if resolved_root is not None else None
         else:
             asr_cls = WhisperASR
             model_override = str(resolved_root) if resolved_root is not None else None
@@ -201,6 +208,11 @@ def _normalize_backend_choice(
         return backend_choice
 
     if backend_choice == "whisper":
+        return backend_choice
+
+    if backend_choice == "whispercpp":
+        if not whispercpp_backend_available(warn_on_missing=True):
+            raise RuntimeError("whispercpp backend requested but whispercpp is not installed.")
         return backend_choice
 
     raise ValueError(f"Unknown backend '{preferred_backend}' for LocalAgreement.")

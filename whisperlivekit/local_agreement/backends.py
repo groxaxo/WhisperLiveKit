@@ -10,6 +10,7 @@ import soundfile as sf
 from whisperlivekit.model_paths import detect_model_format, resolve_model_path
 from whisperlivekit.timed_objects import ASRToken
 from whisperlivekit.whisper.transcribe import transcribe as whisper_transcribe
+from whisperlivekit.backend_support import whispercpp_backend_available
 
 logger = logging.getLogger(__name__)
 class ASRBase:
@@ -301,3 +302,188 @@ class OpenaiApiASR(ASRBase):
 
     def use_vad(self):
         self.use_vad_opt = True
+
+
+class WhisperCppASR(ASRBase):
+    """
+    whisper.cpp backend via whispercpp Python bindings.
+    Works with LocalAgreement (not SimulStreaming).
+    """
+    sep = ""
+
+    _TIME_UNIT_TO_SECONDS = 0.01  # whisper.cpp timestamps are typically centiseconds
+
+    def load_model(self, model_size=None, cache_dir=None, model_dir=None):
+        if not whispercpp_backend_available(warn_on_missing=True):
+            raise ImportError("whispercpp is not installed. Install with: pip install whispercpp")
+
+        from whispercpp import api, Whisper
+        self._api = api
+
+        # If user provided a path, it should be a ggml/gguf model file OR a folder containing one.
+        if model_dir is not None:
+            resolved = resolve_model_path(model_dir)
+            ggml_file = None
+
+            if resolved.is_file():
+                ggml_file = resolved
+            elif resolved.is_dir():
+                # pick first ggml*.bin file (common whisper.cpp distribution)
+                for f in resolved.iterdir():
+                    if f.is_file() and f.name.lower().startswith("ggml") and f.suffix.lower() == ".bin":
+                        ggml_file = f
+                        break
+
+            if ggml_file is None:
+                raise FileNotFoundError(
+                    f"whispercpp backend requires a ggml model file (e.g. ggml-*.bin). "
+                    f"Got: {resolved}"
+                )
+
+            self._ctx = api.Context.from_file(str(ggml_file))
+            self._params = api.Params.from_enum(api.SAMPLING_GREEDY).build()
+            return self._ctx  # stored in self._ctx
+
+        # Otherwise, allow whispercpp to download a converted model by name (tiny/base/small/...)
+        if model_size is None:
+            raise ValueError("Either model_size or model_dir must be set for WhisperCppASR")
+
+        w = Whisper.from_pretrained(model_size, basedir=cache_dir)
+        self._ctx = w.context
+        self._params = w.params
+        return self._ctx
+
+    def _configure_params(self, init_prompt: str):
+        p = self._params
+
+        # Enable token timestamps if available (needed for word timings)
+        if hasattr(p, "with_token_timestamps"):
+            p.with_token_timestamps(True)
+
+        # Keep context across calls (closer to condition_on_previous_text=True)
+        if hasattr(p, "with_no_context"):
+            p.with_no_context(False)
+
+        # Language
+        if hasattr(p, "with_language"):
+            if self.original_language:
+                p.with_language(self.original_language)
+            else:
+                p.with_language("auto")
+
+        # Prompt: best-effort (bindings differ). Ignore if unsupported.
+        if init_prompt:
+            try:
+                if hasattr(self._ctx, "tokenize") and hasattr(p, "set_tokens"):
+                    ids = self._ctx.tokenize(init_prompt, 512)
+                    p.set_tokens(ids)
+            except Exception:
+                logger.warning("whispercpp init_prompt could not be applied; continuing without it.")
+
+        return p
+
+    def transcribe(self, audio, init_prompt=""):
+        audio = np.asarray(audio, dtype=np.float32)
+        if not audio.flags["C_CONTIGUOUS"]:
+            audio = np.ascontiguousarray(audio)
+
+        params = self._configure_params(init_prompt)
+        self._ctx.full(params, audio)
+
+        # best-effort detected language
+        detected_language = None
+        try:
+            lang_id = self._ctx.full_lang_id()
+            if hasattr(self._ctx, "lang_id_to_str"):
+                detected_language = self._ctx.lang_id_to_str(lang_id)
+        except Exception:
+            pass
+
+        segments = []
+        n_seg = self._ctx.full_n_segments()
+        for s in range(n_seg):
+            text = self._ctx.full_get_segment_text(s)
+            t0 = self._ctx.full_get_segment_start(s) * self._TIME_UNIT_TO_SECONDS
+            t1 = self._ctx.full_get_segment_end(s) * self._TIME_UNIT_TO_SECONDS
+
+            # token-level timing -> reconstruct "word-ish" items
+            token_items = []
+            n_tok = self._ctx.full_n_tokens(s)
+            for i in range(n_tok):
+                ttxt = self._ctx.full_get_token_text(s, i)
+                tdat = self._ctx.full_get_token_data(s, i)  # has t0/t1/p in most builds
+                token_items.append(
+                    {
+                        "text": ttxt,
+                        "t0": float(getattr(tdat, "t0", 0)) * self._TIME_UNIT_TO_SECONDS,
+                        "t1": float(getattr(tdat, "t1", 0)) * self._TIME_UNIT_TO_SECONDS,
+                        "p": float(getattr(tdat, "p", 0.0)),
+                    }
+                )
+
+            words = self._tokens_to_words(token_items)
+
+            segments.append({"start": t0, "end": t1, "text": text, "words": words})
+
+        return {"segments": segments, "language": detected_language}
+
+    def _tokens_to_words(self, token_items):
+        words = []
+        cur_text = ""
+        cur_t0 = None
+        cur_t1 = None
+        probs = []
+
+        def flush():
+            nonlocal cur_text, cur_t0, cur_t1, probs
+            if not cur_text or cur_t0 is None or cur_t1 is None:
+                cur_text, cur_t0, cur_t1, probs = "", None, None, []
+                return
+            # geometric mean of probs (best-effort)
+            safe = [p for p in probs if p and p > 0.0]
+            if safe:
+                prob = math.exp(sum(math.log(p) for p in safe) / len(safe))
+            else:
+                prob = None
+            words.append({"start": cur_t0, "end": cur_t1, "word": cur_text, "probability": prob})
+            cur_text, cur_t0, cur_t1, probs = "", None, None, []
+
+        for it in token_items:
+            txt = it["text"]
+
+            # skip special tokens best-effort
+            if txt.startswith("<|") and txt.endswith("|>"):
+                continue
+
+            # boundary: token begins with a space => new word
+            if txt.startswith(" ") and cur_text:
+                flush()
+
+            if cur_t0 is None:
+                cur_t0 = it["t0"]
+            cur_t1 = it["t1"]
+            cur_text += txt
+            probs.append(it.get("p", 0.0))
+
+        flush()
+        return words
+
+    def ts_words(self, r) -> List[ASRToken]:
+        tokens = []
+        for seg in r.get("segments", []):
+            for w in seg.get("words", []):
+                tokens.append(
+                    ASRToken(
+                        w["start"],
+                        w["end"],
+                        w["word"],
+                        probability=w.get("probability"),
+                    )
+                )
+        return tokens
+
+    def segments_end_ts(self, res) -> List[float]:
+        return [seg["end"] for seg in res.get("segments", [])]
+
+    def use_vad(self):
+        logger.warning("VAD is not supported for WhisperCppASR backend and will be ignored.")
