@@ -87,6 +87,16 @@ def backend_factory(
             confidence_validation,
             warmup_file=None,
             min_chunk_size=None,
+            # WhisperCpp-specific parameters
+            whispercpp_threads=8,
+            whispercpp_beam_size=1,
+            whispercpp_best_of=1,
+            whispercpp_no_fallback=False,
+            whispercpp_max_context=-1,
+            whispercpp_no_timestamps=False,
+            whispercpp_max_len=0,
+            whispercpp_step_ms=500,
+            whispercpp_window_ms=5000,
         ):
     backend_choice = backend
     custom_reference = model_path or model_dir
@@ -141,13 +151,32 @@ def backend_factory(
 
         t = time.time()
         logger.info(f"Loading Whisper {model_size} model for language {lan} using backend {backend_choice}...")
-        asr = asr_cls(
-            model_size=model_size,
-            lan=lan,
-            cache_dir=model_cache_dir,
-            model_dir=model_override,
-            lora_path=lora_path if backend_choice == "whisper" else None,
-        )
+        
+        # Build kwargs for ASR instantiation
+        asr_kwargs = {
+            "model_size": model_size,
+            "lan": lan,
+            "cache_dir": model_cache_dir,
+            "model_dir": model_override,
+        }
+        
+        # Add backend-specific parameters
+        if backend_choice == "whisper":
+            asr_kwargs["lora_path"] = lora_path
+        elif backend_choice == "whispercpp":
+            asr_kwargs.update({
+                "threads": whispercpp_threads,
+                "beam_size": whispercpp_beam_size,
+                "best_of": whispercpp_best_of,
+                "no_fallback": whispercpp_no_fallback,
+                "max_context": whispercpp_max_context,
+                "no_timestamps": whispercpp_no_timestamps,
+                "max_len": whispercpp_max_len,
+                "step_ms": whispercpp_step_ms,
+                "window_ms": whispercpp_window_ms,
+            })
+        
+        asr = asr_cls(**asr_kwargs)
         e = time.time()
         logger.info(f"done. It took {round(e-t,2)} seconds.")
 

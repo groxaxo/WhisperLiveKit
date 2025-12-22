@@ -126,6 +126,16 @@ class TranscriptionEngine:
                     "buffer_trimming": "segment",
                     "confidence_validation": False,
                     "buffer_trimming_sec": 15,
+                    # WhisperCpp-specific parameters
+                    "whispercpp_threads": 8,
+                    "whispercpp_beam_size": 1,
+                    "whispercpp_best_of": 1,
+                    "whispercpp_no_fallback": False,
+                    "whispercpp_max_context": -1,
+                    "whispercpp_no_timestamps": False,
+                    "whispercpp_max_len": 0,
+                    "whispercpp_step_ms": 500,
+                    "whispercpp_window_ms": 5000,
                 }
                 whisperstreaming_params = update_with_kwargs(whisperstreaming_params, kwargs)
                 

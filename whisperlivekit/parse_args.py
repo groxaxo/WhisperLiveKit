@@ -196,6 +196,82 @@ def parse_args():
         default=False,
         help="If set, raw PCM (s16le) data is expected as input and FFmpeg will be bypassed. Frontend will use AudioWorklet instead of MediaRecorder."
     )
+    
+    # WhisperCpp-specific arguments
+    whispercpp_group = parser.add_argument_group('WhisperCpp arguments (only used with --backend whispercpp)')
+    
+    whispercpp_group.add_argument(
+        "--whispercpp-threads",
+        type=int,
+        default=8,
+        dest="whispercpp_threads",
+        help="Number of threads for whisper.cpp processing. Default: 8 (good for Intel 1240P).",
+    )
+    
+    whispercpp_group.add_argument(
+        "--whispercpp-beam-size",
+        type=int,
+        default=1,
+        dest="whispercpp_beam_size",
+        help="Beam size for decoding. Set to 1 for fastest realtime performance.",
+    )
+    
+    whispercpp_group.add_argument(
+        "--whispercpp-best-of",
+        type=int,
+        default=1,
+        dest="whispercpp_best_of",
+        help="Number of best candidates to keep. Set to 1 for fastest realtime performance.",
+    )
+    
+    whispercpp_group.add_argument(
+        "--whispercpp-no-fallback",
+        action="store_true",
+        default=False,
+        dest="whispercpp_no_fallback",
+        help="Disable fallback to other sampling strategies. Improves speed.",
+    )
+    
+    whispercpp_group.add_argument(
+        "--whispercpp-max-context",
+        type=int,
+        default=-1,
+        dest="whispercpp_max_context",
+        help="Maximum context tokens to use. -1 for unlimited. Cap this to prevent context from growing forever.",
+    )
+    
+    whispercpp_group.add_argument(
+        "--whispercpp-no-timestamps",
+        action="store_true",
+        default=False,
+        dest="whispercpp_no_timestamps",
+        help="Disable timestamp generation entirely. Fastest mode, but no word-level timing.",
+    )
+    
+    whispercpp_group.add_argument(
+        "--whispercpp-max-len",
+        type=int,
+        default=0,
+        dest="whispercpp_max_len",
+        help="Max segment length in characters. 0 = no limit. Set to 1 only if you need word-level timestamps (slower).",
+    )
+    
+    whispercpp_group.add_argument(
+        "--whispercpp-step-ms",
+        type=int,
+        default=500,
+        dest="whispercpp_step_ms",
+        help="Step size in milliseconds for realtime processing. Default: 500ms (proven for whisper.cpp realtime).",
+    )
+    
+    whispercpp_group.add_argument(
+        "--whispercpp-window-ms",
+        type=int,
+        default=5000,
+        dest="whispercpp_window_ms",
+        help="Rolling window length in milliseconds. Default: 5000ms (5 seconds).",
+    )
+    
     # SimulStreaming-specific arguments
     simulstreaming_group = parser.add_argument_group('SimulStreaming arguments (only used with --backend simulstreaming)')
 

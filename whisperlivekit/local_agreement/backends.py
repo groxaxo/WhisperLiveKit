@@ -17,7 +17,7 @@ class ASRBase:
     sep = " "  # join transcribe words with this character (" " for whisper_timestamped,
               # "" for faster-whisper because it emits the spaces when needed)
 
-    def __init__(self, lan, model_size=None, cache_dir=None, model_dir=None, lora_path=None, logfile=sys.stderr):
+    def __init__(self, lan, model_size=None, cache_dir=None, model_dir=None, lora_path=None, logfile=sys.stderr, **kwargs):
         self.logfile = logfile
         self.transcribe_kargs = {}
         self.lora_path = lora_path
@@ -308,10 +308,36 @@ class WhisperCppASR(ASRBase):
     """
     whisper.cpp backend via whispercpp Python bindings.
     Works with LocalAgreement (not SimulStreaming).
+    Optimized for realtime transcription with low CPU usage.
     """
     sep = ""
 
     _TIME_UNIT_TO_SECONDS = 0.01  # whisper.cpp timestamps are typically centiseconds
+
+    def __init__(self, lan, model_size=None, cache_dir=None, model_dir=None, 
+                 threads=8, beam_size=1, best_of=1, no_fallback=False,
+                 max_context=-1, no_timestamps=False, max_len=0,
+                 step_ms=500, window_ms=5000, **kwargs):
+        # Store performance parameters
+        self.threads = threads
+        self.beam_size = beam_size
+        self.best_of = best_of
+        self.no_fallback = no_fallback
+        self.max_context = max_context
+        self.no_timestamps = no_timestamps
+        self.max_len = max_len
+        self.step_ms = step_ms
+        self.window_ms = window_ms
+        
+        # Call parent init
+        super().__init__(lan, model_size, cache_dir, model_dir, **kwargs)
+        
+        logger.info(
+            f"WhisperCpp configured: threads={threads}, beam_size={beam_size}, "
+            f"best_of={best_of}, no_fallback={no_fallback}, max_context={max_context}, "
+            f"no_timestamps={no_timestamps}, max_len={max_len}, "
+            f"step_ms={step_ms}, window_ms={window_ms}"
+        )
 
     def load_model(self, model_size=None, cache_dir=None, model_dir=None):
         if not whispercpp_backend_available(warn_on_missing=True):
@@ -356,9 +382,44 @@ class WhisperCppASR(ASRBase):
     def _configure_params(self, init_prompt: str):
         p = self._params
 
-        # Enable token timestamps if available (needed for word timings)
-        if hasattr(p, "with_token_timestamps"):
-            p.with_token_timestamps(True)
+        # Apply performance parameters
+        # Threads
+        if hasattr(p, "with_n_threads"):
+            p.with_n_threads(self.threads)
+        
+        # Beam size (greedy decoding when beam_size=1)
+        if hasattr(p, "with_beam_size"):
+            p.with_beam_size(self.beam_size)
+        
+        # Best of
+        if hasattr(p, "with_best_of"):
+            p.with_best_of(self.best_of)
+        
+        # No fallback
+        if self.no_fallback and hasattr(p, "with_temperature_inc"):
+            p.with_temperature_inc(0.0)  # Disable temperature fallback
+        
+        # Max context
+        if self.max_context > 0 and hasattr(p, "with_n_max_text_ctx"):
+            p.with_n_max_text_ctx(self.max_context)
+        
+        # Timestamp control
+        if self.no_timestamps:
+            # Disable all timestamps for maximum speed
+            if hasattr(p, "with_token_timestamps"):
+                p.with_token_timestamps(False)
+            if hasattr(p, "with_timestamps"):
+                p.with_timestamps(False)
+        else:
+            # Enable token timestamps only if max_len > 0 (word-level timing needed)
+            if hasattr(p, "with_token_timestamps"):
+                p.with_token_timestamps(self.max_len > 0)
+            if hasattr(p, "with_timestamps"):
+                p.with_timestamps(True)
+        
+        # Max length
+        if self.max_len > 0 and hasattr(p, "with_max_len"):
+            p.with_max_len(self.max_len)
 
         # Keep context across calls (closer to condition_on_previous_text=True)
         if hasattr(p, "with_no_context"):
