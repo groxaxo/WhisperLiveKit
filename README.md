@@ -286,5 +286,14 @@ docker run --gpus all -p 8000:8000 --name wlk wlk --model large-v3 --language fr
   - `HF_PRECACHE_DIR="./.cache/"` - Pre-load a model cache for faster first-time start
   - `HF_TKN_FILE="./token"` - Add your Hugging Face Hub access token to download gated models
 
+## 📚 Documentation
+
+- **[Components & Architecture Analysis](COMPONENTS_AND_WHISPER_CPP_ANALYSIS.md)** - Detailed breakdown of all project components, backend implementations, and whisper.cpp integration analysis
+- **[API Documentation](docs/API.md)** - API endpoints and usage
+- **[Technical Integration](docs/technical_integration.md)** - Integration guide
+- **[Troubleshooting Guide](docs/troubleshooting.md)** - Common issues and solutions
+- **[Supported Languages](docs/supported_languages.md)** - Language support
+- **[Default and Custom Models](docs/default_and_custom_models.md)** - Model configuration
+
 ## 🔮 Use Cases
 Capture discussions in real-time for meeting transcription, help hearing-impaired users follow conversations through accessibility tools, transcribe podcasts or videos automatically for content creation, transcribe support calls with speaker identification for customer service...
