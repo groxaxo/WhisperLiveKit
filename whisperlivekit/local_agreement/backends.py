@@ -898,3 +898,134 @@ class WhisperCppASR(ASRBase):
 
     def use_vad(self):
         logger.warning("VAD is not supported for WhisperCppASR backend and will be ignored.")
+
+
+class OpenVINOASR(ASRBase):
+    """Uses OpenVINO GenAI as the backend for optimized CPU inference."""
+    sep = ""
+
+    def __init__(self, lan, model_size=None, cache_dir=None, model_dir=None, 
+                 device="CPU", threads=0, **kwargs):
+        self.device = device
+        self.threads = threads
+        super().__init__(lan, model_size, cache_dir, model_dir, **kwargs)
+
+    def load_model(self, model_size=None, cache_dir=None, model_dir=None):
+        try:
+            import openvino_genai as ov_genai
+        except ImportError:
+            raise ImportError(
+                "OpenVINO GenAI is not installed. "
+                "Install it with: pip install openvino-genai openvino"
+            )
+
+        if model_dir is None:
+            raise ValueError(
+                "OpenVINO backend requires --openvino-model-dir or --model-dir "
+                "pointing to an OpenVINO IR model directory. "
+                "Standard Whisper models need to be converted to OpenVINO format first."
+            )
+
+        resolved_path = resolve_model_path(model_dir)
+        logger.info(f"Loading OpenVINO Whisper model from {resolved_path} on device {self.device}")
+        
+        # Initialize OpenVINO Whisper pipeline
+        config = {}
+        if self.threads > 0:
+            config["NUM_STREAMS"] = "1"
+            config["INFERENCE_NUM_THREADS"] = str(self.threads)
+        
+        try:
+            pipeline = ov_genai.WhisperPipeline(str(resolved_path), self.device, **config)
+            logger.info("OpenVINO Whisper model loaded successfully")
+            return pipeline
+        except Exception as e:
+            logger.error(f"Failed to load OpenVINO model: {e}")
+            raise RuntimeError(
+                f"Could not load OpenVINO model from {resolved_path}. "
+                f"Ensure the directory contains a valid OpenVINO IR model. Error: {e}"
+            )
+
+    def transcribe(self, audio, init_prompt=""):
+        """Transcribe audio using OpenVINO GenAI pipeline."""
+        import openvino_genai as ov_genai
+        
+        # Prepare generation config
+        config = ov_genai.WhisperGenerationConfig()
+        config.max_new_tokens = 448  # Standard for Whisper
+        config.return_timestamps = True
+        
+        if self.original_language:
+            config.language = f"<|{self.original_language}|>"
+        
+        if init_prompt:
+            config.initial_prompt = init_prompt
+        
+        # Convert audio to the format expected by OpenVINO
+        # OpenVINO expects float32 audio at 16kHz
+        if isinstance(audio, np.ndarray):
+            audio_data = audio.astype(np.float32)
+        else:
+            audio_data = np.array(audio, dtype=np.float32)
+        
+        # Run inference
+        try:
+            result = self.model.generate(audio_data, config)
+            
+            # Convert OpenVINO result to expected format
+            # Note: This is a simplified conversion - full implementation
+            # would need to properly parse OpenVINO's output format
+            segments = []
+            if hasattr(result, 'chunks'):
+                for chunk in result.chunks:
+                    segments.append({
+                        "start": chunk.start_ts,
+                        "end": chunk.end_ts,
+                        "text": chunk.text,
+                        "words": []  # OpenVINO may not provide word-level timestamps
+                    })
+            else:
+                # Fallback if chunks not available
+                segments.append({
+                    "start": 0.0,
+                    "end": len(audio_data) / 16000.0,
+                    "text": str(result),
+                    "words": []
+                })
+            
+            return {"segments": segments, "language": self.original_language or "en"}
+        except Exception as e:
+            logger.error(f"OpenVINO transcription failed: {e}")
+            raise
+
+    def ts_words(self, r) -> List[ASRToken]:
+        """Convert OpenVINO result to ASRToken list."""
+        tokens = []
+        for segment in r.get("segments", []):
+            # If word-level timestamps are available
+            if segment.get("words"):
+                for word in segment["words"]:
+                    token = ASRToken(
+                        word["start"],
+                        word["end"],
+                        word["word"],
+                        probability=word.get("probability"),
+                    )
+                    tokens.append(token)
+            else:
+                # Fallback: create a single token for the whole segment
+                text = segment.get("text", "").strip()
+                if text:
+                    token = ASRToken(
+                        segment["start"],
+                        segment["end"],
+                        text,
+                    )
+                    tokens.append(token)
+        return tokens
+
+    def segments_end_ts(self, res) -> List[float]:
+        return [seg["end"] for seg in res.get("segments", [])]
+
+    def use_vad(self):
+        logger.warning("VAD is not currently supported for OpenVINO backend and will be ignored.")

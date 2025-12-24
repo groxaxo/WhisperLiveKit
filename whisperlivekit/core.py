@@ -140,6 +140,10 @@ class TranscriptionEngine:
                     "whispercpp_openvino": False,
                     "whispercpp_ov_encoder": None,
                     "whispercpp_ov_device": "CPU",
+                    # OpenVINO backend parameters
+                    "openvino_model_dir": None,
+                    "openvino_device": "CPU",
+                    "openvino_threads": 0,
                 }
                 whisperstreaming_params = update_with_kwargs(whisperstreaming_params, kwargs)
                 

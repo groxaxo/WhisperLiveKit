@@ -46,3 +46,16 @@ def whispercpp_backend_available(warn_on_missing=False):
     if not available and warn_on_missing:
         logger.warning("whispercpp not found. Install with: pip install whispercpp (or pywhispercpp)")
     return available
+
+
+def openvino_backend_available(warn_on_missing=False):
+    """Return True if OpenVINO GenAI is available for fast CPU inference."""
+    available = module_available("openvino_genai")
+    if not available and warn_on_missing:
+        logger.warning(
+            "=" * 50
+            + "\nOpenVINO GenAI not found. Consider installing openvino-genai "
+              "for fast CPU inference: `pip install openvino-genai`\n"
+            + "=" * 50
+        )
+    return available

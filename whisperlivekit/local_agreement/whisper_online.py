@@ -16,7 +16,7 @@ from whisperlivekit.backend_support import (
 from whisperlivekit.model_paths import detect_model_format, resolve_model_path
 from whisperlivekit.warmup import warmup_asr
 
-from .backends import FasterWhisperASR, MLXWhisper, OpenaiApiASR, WhisperASR, WhisperCppASR
+from .backends import FasterWhisperASR, MLXWhisper, OpenaiApiASR, OpenVINOASR, WhisperASR, WhisperCppASR
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +101,10 @@ def backend_factory(
             whispercpp_openvino=False,
             whispercpp_ov_encoder=None,
             whispercpp_ov_device="CPU",
+            # OpenVINO backend parameters
+            openvino_model_dir=None,
+            openvino_device="CPU",
+            openvino_threads=0,
         ):
     backend_choice = backend
     custom_reference = model_path or model_dir
@@ -145,6 +149,16 @@ def backend_factory(
             asr_cls = WhisperCppASR
             # whisper.cpp backend expects a GGML/GGUF file (or a dir containing one)
             model_override = str(resolved_root) if resolved_root is not None else None
+        elif backend_choice == "openvino":
+            asr_cls = OpenVINOASR
+            # OpenVINO backend expects an IR model directory
+            # Use openvino_model_dir if specified, otherwise fall back to model_dir
+            model_override = openvino_model_dir if openvino_model_dir else (str(resolved_root) if resolved_root is not None else None)
+            if model_override is None:
+                raise ValueError(
+                    "OpenVINO backend requires --openvino-model-dir or --model-dir "
+                    "pointing to an OpenVINO IR model directory."
+                )
         else:
             asr_cls = WhisperASR
             model_override = str(resolved_root) if resolved_root is not None else None
@@ -182,6 +196,11 @@ def backend_factory(
                 "openvino": whispercpp_openvino,
                 "ov_encoder": whispercpp_ov_encoder,
                 "ov_device": whispercpp_ov_device,
+            })
+        elif backend_choice == "openvino":
+            asr_kwargs.update({
+                "device": openvino_device,
+                "threads": openvino_threads,
             })
         
         asr = asr_cls(**asr_kwargs)
@@ -250,6 +269,12 @@ def _normalize_backend_choice(
     if backend_choice == "whispercpp":
         if not whispercpp_backend_available(warn_on_missing=True):
             raise RuntimeError("whispercpp backend requested but whispercpp is not installed.")
+        return backend_choice
+
+    if backend_choice == "openvino":
+        from whisperlivekit.backend_support import openvino_backend_available
+        if not openvino_backend_available(warn_on_missing=True):
+            raise RuntimeError("openvino backend requested but openvino-genai is not installed.")
         return backend_choice
 
     raise ValueError(f"Unknown backend '{preferred_backend}' for LocalAgreement.")
