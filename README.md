@@ -230,6 +230,8 @@ wlk --backend openvino \
 2. Convert or download an OpenVINO IR model for Whisper
 3. Run with `--backend openvino --openvino-model-dir /path/to/model`
 
+📖 **[Complete OpenVINO Backend Guide →](docs/OPENVINO_BACKEND.md)**
+
 **Performance** (Intel Core i5-1240P):
 - **Model**: INT8 Turbo (~1GB)
 - **Speed**: 6-10x realtime
@@ -410,11 +412,15 @@ docker run -p 8000:8000 --name wlk-openvino wlk-openvino \
 ## 📚 Documentation
 
 - **[Components & Architecture Analysis](COMPONENTS_AND_WHISPER_CPP_ANALYSIS.md)** - Detailed breakdown of all project components, backend implementations, and whisper.cpp integration analysis
+- **[WhisperCpp Optimization Guide](docs/WHISPERCPP_OPTIMIZATION.md)** - Ultra-fast realtime performance with quantized models
+- **[OpenVINO Backend Guide](docs/OPENVINO_BACKEND.md)** - Fast CPU inference with Intel OpenVINO optimization
 - **[API Documentation](docs/API.md)** - API endpoints and usage
 - **[Technical Integration](docs/technical_integration.md)** - Integration guide
 - **[Troubleshooting Guide](docs/troubleshooting.md)** - Common issues and solutions
 - **[Supported Languages](docs/supported_languages.md)** - Language support
 - **[Default and Custom Models](docs/default_and_custom_models.md)** - Model configuration
+- **[Chrome Extension Guide](chrome-extension/README.md)** - Browser tab audio capture
+- **[Open WebUI Integration](OPEN_WEBUI_INTEGRATION.md)** - OpenAI-compatible API integration
 
 ## 🔮 Use Cases
 Capture discussions in real-time for meeting transcription, help hearing-impaired users follow conversations through accessibility tools, transcribe podcasts or videos automatically for content creation, transcribe support calls with speaker identification for customer service...
