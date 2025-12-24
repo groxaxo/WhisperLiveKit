@@ -1,0 +1,64 @@
+FROM python:3.11-slim
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+ARG EXTRAS
+ARG HF_PRECACHE_DIR
+ARG HF_TKN_FILE
+
+# Install system dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        ffmpeg \
+        git \
+        build-essential \
+        python3-dev \
+        wget \
+        ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install CPU-only PyTorch (lighter weight for OpenVINO use)
+RUN pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+
+COPY . .
+
+# Install WhisperLiveKit with OpenVINO support
+RUN if [ -n "$EXTRAS" ]; then \
+      echo "Installing with extras: [$EXTRAS]"; \
+      pip install --no-cache-dir "whisperlivekit[$EXTRAS]" openvino openvino-genai; \
+    else \
+      echo "Installing base package with OpenVINO"; \
+      pip install --no-cache-dir whisperlivekit openvino openvino-genai; \
+    fi
+
+# Enable in-container caching for Hugging Face models
+VOLUME ["/root/.cache/huggingface/hub"]
+
+# Conditionally copy a local pre-cache from the build context
+RUN if [ -n "$HF_PRECACHE_DIR" ]; then \
+      echo "Copying Hugging Face cache from $HF_PRECACHE_DIR"; \
+      mkdir -p /root/.cache/huggingface/hub && \
+      cp -r $HF_PRECACHE_DIR/* /root/.cache/huggingface/hub; \
+    else \
+      echo "No local Hugging Face cache specified, skipping copy"; \
+    fi
+
+# Conditionally copy a Hugging Face token if provided
+RUN if [ -n "$HF_TKN_FILE" ]; then \
+      echo "Copying Hugging Face token from $HF_TKN_FILE"; \
+      mkdir -p /root/.cache/huggingface && \
+      cp $HF_TKN_FILE /root/.cache/huggingface/token; \
+    else \
+      echo "No Hugging Face token file specified, skipping token setup"; \
+    fi
+
+# Expose port for the transcription server
+EXPOSE 8000
+
+ENTRYPOINT ["whisperlivekit-server", "--host", "0.0.0.0"]
+
+# Default args - using OpenVINO backend with tiny model for fast CPU inference
+CMD ["--backend", "openvino", "--model", "tiny"]

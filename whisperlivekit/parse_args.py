@@ -147,8 +147,8 @@ def parse_args():
         "--backend",
         type=str,
         default="auto",
-        choices=["auto", "mlx-whisper", "faster-whisper", "whisper", "whispercpp", "openai-api"],
-        help="Select the Whisper backend implementation (auto: prefer MLX on macOS, otherwise Faster-Whisper, else Whisper). Use 'openai-api' with --backend-policy localagreement to call OpenAI's API.",
+        choices=["auto", "mlx-whisper", "faster-whisper", "whisper", "whispercpp", "openvino", "openai-api"],
+        help="Select the Whisper backend implementation (auto: prefer MLX on macOS, otherwise Faster-Whisper, else Whisper). Use 'whispercpp' for quantized GGML/GGUF models, 'openvino' for fast CPU inference with OpenVINO, or 'openai-api' with --backend-policy localagreement to call OpenAI's API.",
     )
     parser.add_argument(
         "--no-vac",
@@ -415,6 +415,34 @@ def parse_args():
         type=str,
         default="600M",
         help="600M or 1.3B",
+    )
+
+    # OpenVINO backend arguments
+    openvino_group = parser.add_argument_group('OpenVINO arguments (only used with --backend openvino)')
+    
+    openvino_group.add_argument(
+        "--openvino-model-dir",
+        type=str,
+        default=None,
+        dest="openvino_model_dir",
+        help="Path to the OpenVINO Whisper model directory (IR format). If not specified, will attempt to use --model-dir.",
+    )
+    
+    openvino_group.add_argument(
+        "--openvino-device",
+        type=str,
+        default="CPU",
+        choices=["CPU", "GPU", "AUTO"],
+        dest="openvino_device",
+        help="OpenVINO execution device: CPU (default), GPU (Intel integrated/discrete graphics), or AUTO.",
+    )
+    
+    openvino_group.add_argument(
+        "--openvino-threads",
+        type=int,
+        default=0,
+        dest="openvino_threads",
+        help="Number of CPU threads for OpenVINO inference. 0 = auto-detect. Default: 0.",
     )
 
     args = parser.parse_args()

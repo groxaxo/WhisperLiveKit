@@ -59,12 +59,19 @@ pip install whisperlivekit
 > - For HTTPS requirements, see the **Parameters** section for SSL configuration options.
 
 
-#### Use it to capture audio from web pages.
+#### 🎯 Chrome Extension for Tab Audio Capture
 
-Go to `chrome-extension` for instructions.
+Capture and transcribe audio from any browser tab in real-time! The **WhisperLiveKit Chrome Extension** lets you transcribe YouTube videos, podcasts, web conferences, and more.
+
+**Quick Setup:**
+1. Run `python scripts/sync_extension.py` to prepare extension files
+2. Load the `chrome-extension` directory in Chrome as an unpacked extension
+3. Click the extension icon on any page with audio to start transcribing
+
+**📖 [Complete Extension Guide →](chrome-extension/README.md)**
 
 <p align="center">
-<img src="https://raw.githubusercontent.com/QuentinFuxa/WhisperLiveKit/refs/heads/main/chrome-extension/demo-extension.png" alt="WhisperLiveKit Demo" width="600">
+<img src="https://raw.githubusercontent.com/QuentinFuxa/WhisperLiveKit/refs/heads/main/chrome-extension/demo-extension.png" alt="WhisperLiveKit Chrome Extension" width="600">
 </p>
 
 
@@ -91,12 +98,13 @@ WhisperLiveKit provides an **OpenAI-compatible API endpoint** for seamless integ
 | **Windows/Linux optimizations** | `faster-whisper` | GPU/CPU acceleration via CTranslate2 |
 | **Apple Silicon optimizations** | `mlx-whisper` | Optimized for M1/M2/M3 chips |
 | **🚀 whisper.cpp (Realtime)** | `whispercpp` | **Ultra-fast** quantized models (GGML/GGUF). [Optimization guide →](docs/WHISPERCPP_OPTIMIZATION.md) |
+| **⚡ OpenVINO (Fast CPU)** | `openvino-genai` | **Fast CPU inference** optimized for Intel processors. [See OpenVINO backend →](#-openvino-backend-fast-cpu-inference) |
 | **Translation** | `nllw` | 200+ language translation |
 | **Speaker diarization** | `git+https://github.com/NVIDIA/NeMo.git@main#egg=nemo_toolkit[asr]` | SOTA speaker identification |
 | OpenAI API | `openai` | Use OpenAI's hosted Whisper API |
 | *[Not recommended]* Speaker diarization with Diart | `diart` | Legacy diarization backend |
 
-> **💡 Recommended for Production**: Install `whispercpp` for the fastest realtime performance with quantized models. See the [WhisperCpp Optimization Guide](docs/WHISPERCPP_OPTIMIZATION.md) for detailed setup instructions.
+> **💡 Recommended for Production**: Install `whispercpp` for the fastest realtime performance with quantized models, or `openvino-genai` for optimized CPU inference on Intel processors. See the [WhisperCpp Optimization Guide](docs/WHISPERCPP_OPTIMIZATION.md) for detailed setup instructions.
 
 See **Parameters & Configuration** below on how to use them.
 
@@ -193,6 +201,47 @@ The guide includes:
 - Example configurations for different use cases
 
 
+### ⚡ OpenVINO Backend (Fast CPU Inference)
+
+For **optimized CPU inference** on Intel processors, use the OpenVINO backend with INT8/INT4 quantized models:
+
+```bash
+# Install OpenVINO GenAI
+pip install openvino-genai
+
+# Quick start with OpenVINO backend
+wlk --backend openvino \
+    --backend-policy localagreement \
+    --model-dir /path/to/openvino/model \
+    --language en \
+    --openvino-device CPU \
+    --openvino-threads 8
+```
+
+**Why OpenVINO?**
+- ⚡ **6-10x realtime** on Intel CPUs (INT8 models)
+- 💻 **Optimized for Intel hardware** - leverages Intel CPU extensions
+- 📉 **Low memory footprint** (~500-800 MB for INT8 Turbo model)
+- 🎯 **Fast startup** and low latency transcription
+- 🔧 **Supports Intel GPU** acceleration on integrated/discrete graphics
+
+**Getting Started:**
+1. Install: `pip install openvino-genai openvino`
+2. Convert or download an OpenVINO IR model for Whisper
+3. Run with `--backend openvino --openvino-model-dir /path/to/model`
+
+**Performance** (Intel Core i5-1240P):
+- **Model**: INT8 Turbo (~1GB)
+- **Speed**: 6-10x realtime
+- **Latency**: <1 second for typical queries
+- **Memory**: ~500-800 MB
+
+**Related Project:**
+For a standalone OpenVINO Whisper server with OpenAI-compatible API, see:
+- 🔗 **[Whisper-Fast-Cpu-OpenVino](https://github.com/groxaxo/Whisper-Fast-Cpu-OpenVino)** - Dedicated OpenVINO implementation with global dictation support
+
+> **Note**: The OpenVINO backend is currently experimental. For production use, consider `whispercpp` or `faster-whisper` backends.
+
 
 ## Parameters & Configuration
 
@@ -205,7 +254,7 @@ The guide includes:
 | `--target-language` | If sets, translates using [NLLW](https://github.com/QuentinFuxa/NoLanguageLeftWaiting). [200 languages available](docs/supported_languages.md). If you want to translate to english, you can also use `--direct-english-translation`. The STT model will try to directly output the translation. | `None` |
 | `--diarization` | Enable speaker identification | `False` |
 | `--backend-policy` | Streaming strategy: `1`/`simulstreaming` uses AlignAtt SimulStreaming, `2`/`localagreement` uses the LocalAgreement policy | `simulstreaming` |
-| `--backend` | Whisper implementation selector. `auto` picks MLX on macOS (if installed), otherwise Faster-Whisper, otherwise vanilla Whisper. You can also force `mlx-whisper`, `faster-whisper`, `whisper`, `whispercpp` (for quantized GGML/GGUF models - [guide](docs/WHISPERCPP_OPTIMIZATION.md)), or `openai-api` (LocalAgreement only) | `auto` |
+| `--backend` | Whisper implementation selector. `auto` picks MLX on macOS (if installed), otherwise Faster-Whisper, otherwise vanilla Whisper. You can also force `mlx-whisper`, `faster-whisper`, `whisper`, `whispercpp` (for quantized GGML/GGUF models - [guide](docs/WHISPERCPP_OPTIMIZATION.md)), `openvino` (for fast CPU inference on Intel processors), or `openai-api` (LocalAgreement only) | `auto` |
 | `--no-vac` | Disable Voice Activity Controller. NOT ADVISED | `False` |
 | `--no-vad` | Disable Voice Activity Detection. NOT ADVISED | `False` |
 | `--warmup-file` | Audio file path for model warmup | `jfk.wav` |
@@ -268,6 +317,14 @@ The guide includes:
 > **📖 See the [WhisperCpp Optimization Guide](docs/WHISPERCPP_OPTIMIZATION.md) for detailed parameter explanations and recommended configurations.**
 
 
+| OpenVINO backend options | Description | Default |
+|-----------|-------------|---------|
+| `--openvino-model-dir` | Path to OpenVINO Whisper model directory (IR format) | Uses `--model-dir` if not specified |
+| `--openvino-device` | OpenVINO execution device (`CPU`, `GPU`, `AUTO`) | `CPU` |
+| `--openvino-threads` | Number of CPU threads (0 = auto-detect) | `0` |
+
+> **Note**: The OpenVINO backend requires pre-converted models in OpenVINO IR format. See the [Whisper-Fast-Cpu-OpenVino](https://github.com/groxaxo/Whisper-Fast-Cpu-OpenVino) project for model conversion and setup instructions.
+
 
 
 > For diarization using Diart, you need to accept user conditions [here](https://huggingface.co/pyannote/segmentation) for the `pyannote/segmentation` model, [here](https://huggingface.co/pyannote/segmentation-3.0) for the `pyannote/segmentation-3.0` model and [here](https://huggingface.co/pyannote/embedding) for the `pyannote/embedding` model. **Then**, login to HuggingFace: `huggingface-cli login`
@@ -321,12 +378,22 @@ docker build -f Dockerfile.cpu -t wlk .
 docker run -p 8000:8000 --name wlk wlk
 ```
 
+**OpenVINO optimized (fast CPU inference on Intel):**
+```bash
+docker build -f Dockerfile.openvino -t wlk-openvino .
+docker run -p 8000:8000 --name wlk-openvino wlk-openvino
+```
+
 ### Advanced Usage
 
 **Custom configuration:**
 ```bash
 # Example with custom model and language
 docker run --gpus all -p 8000:8000 --name wlk wlk --model large-v3 --language fr
+
+# OpenVINO with custom settings
+docker run -p 8000:8000 --name wlk-openvino wlk-openvino \
+  --backend openvino --openvino-device CPU --language en
 ```
 
 ### Memory Requirements
