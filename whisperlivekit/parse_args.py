@@ -147,8 +147,8 @@ def parse_args():
         "--backend",
         type=str,
         default="auto",
-        choices=["auto", "mlx-whisper", "faster-whisper", "whisper", "whispercpp", "openvino", "openai-api"],
-        help="Select the Whisper backend implementation (auto: prefer MLX on macOS, otherwise Faster-Whisper, else Whisper). Use 'whispercpp' for quantized GGML/GGUF models, 'openvino' for fast CPU inference with OpenVINO, or 'openai-api' with --backend-policy localagreement to call OpenAI's API.",
+        choices=["auto", "mlx-whisper", "faster-whisper", "whisper", "whispercpp", "openvino", "parakeet-tdt", "openai-api"],
+        help="Select the Whisper backend implementation (auto: prefer MLX on macOS, otherwise Faster-Whisper, else Whisper). Use 'whispercpp' for quantized GGML/GGUF models, 'openvino' for fast CPU inference with OpenVINO, 'parakeet-tdt' for NVIDIA Parakeet TDT model with ONNX Runtime, or 'openai-api' with --backend-policy localagreement to call OpenAI's API.",
     )
     parser.add_argument(
         "--no-vac",
@@ -443,6 +443,43 @@ def parse_args():
         default=0,
         dest="openvino_threads",
         help="Number of CPU threads for OpenVINO inference. 0 = auto-detect. Default: 0.",
+    )
+    
+    # Parakeet TDT backend arguments
+    parakeet_group = parser.add_argument_group('Parakeet TDT arguments (only used with --backend parakeet-tdt)')
+    
+    parakeet_group.add_argument(
+        "--parakeet-model-name",
+        type=str,
+        default="nemo-parakeet-tdt-0.6b-v3",
+        dest="parakeet_model_name",
+        help="Parakeet TDT model name. Default: nemo-parakeet-tdt-0.6b-v3.",
+    )
+    
+    parakeet_group.add_argument(
+        "--parakeet-quantization",
+        type=str,
+        default="int8",
+        choices=["int8", "fp16", "fp32"],
+        dest="parakeet_quantization",
+        help="Quantization type for Parakeet TDT model. Default: int8 (fastest).",
+    )
+    
+    parakeet_group.add_argument(
+        "--parakeet-threads",
+        type=int,
+        default=8,
+        dest="parakeet_threads",
+        help="Number of CPU threads for ONNX Runtime inference. Default: 8.",
+    )
+    
+    parakeet_group.add_argument(
+        "--parakeet-device",
+        type=str,
+        default="CPU",
+        choices=["CPU", "GPU"],
+        dest="parakeet_device",
+        help="Execution device for Parakeet TDT: CPU (default) or GPU (CUDA/TensorRT).",
     )
 
     args = parser.parse_args()
