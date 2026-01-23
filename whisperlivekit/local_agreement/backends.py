@@ -1,7 +1,9 @@
 import io
 import logging
 import math
+import os
 import sys
+import tempfile
 from typing import List
 
 import numpy as np
@@ -1113,8 +1115,8 @@ class ParakeetTDTASR(ASRBase):
             audio_data = np.array(audio, dtype=np.float32)
 
         # Save audio to temporary WAV file for onnx-asr
-        # This is necessary because onnx-asr.recognize() expects a file path
-        import tempfile
+        # Note: This is necessary because onnx-asr.recognize() expects a file path
+        # TODO: Check if future versions of onnx-asr support direct numpy array input
         with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp_file:
             tmp_path = tmp_file.name
             sf.write(tmp_path, audio_data, 16000)
@@ -1159,23 +1161,16 @@ class ParakeetTDTASR(ASRBase):
                 }
                 segments.append(segment)
 
-            # Clean up temporary file
-            import os
-            try:
-                os.remove(tmp_path)
-            except:
-                pass
-
             return {"segments": segments, "language": self.original_language or "auto"}
         except Exception as e:
             logger.error(f"Parakeet TDT transcription failed: {e}")
-            # Clean up temporary file on error
-            import os
+            raise
+        finally:
+            # Clean up temporary file (always executed)
             try:
                 os.remove(tmp_path)
-            except:
-                pass
-            raise
+            except (OSError, FileNotFoundError) as e:
+                logger.debug(f"Could not remove temporary file {tmp_path}: {e}")
 
     def ts_words(self, r) -> List[ASRToken]:
         """Convert Parakeet TDT result to ASRToken list."""
