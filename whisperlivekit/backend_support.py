@@ -59,3 +59,17 @@ def openvino_backend_available(warn_on_missing=False):
             + "=" * 50
         )
     return available
+
+
+def parakeet_backend_available(warn_on_missing=False):
+    """Return True if onnx-asr is available for Parakeet TDT inference."""
+    available = module_available("onnx_asr")
+    if not available and warn_on_missing:
+        logger.warning(
+            "=" * 50
+            + "\nonnx-asr not found. Consider installing onnx-asr[hub] "
+              "for ultra-fast CPU transcription with Parakeet TDT: "
+              "`pip install onnx-asr[hub]`\n"
+            + "=" * 50
+        )
+    return available

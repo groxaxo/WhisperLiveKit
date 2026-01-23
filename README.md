@@ -99,12 +99,13 @@ WhisperLiveKit provides an **OpenAI-compatible API endpoint** for seamless integ
 | **Apple Silicon optimizations** | `mlx-whisper` | Optimized for M1/M2/M3 chips |
 | **🚀 whisper.cpp (Realtime)** | `whispercpp` | **Ultra-fast** quantized models (GGML/GGUF). [Optimization guide →](docs/WHISPERCPP_OPTIMIZATION.md) |
 | **⚡ OpenVINO (Fast CPU)** | `openvino-genai` | **Fast CPU inference** optimized for Intel processors. [See OpenVINO backend →](#-openvino-backend-fast-cpu-inference) |
+| **🔥 Parakeet TDT (Ultra-Fast CPU)** | `pip install whisperlivekit[parakeet]` | **Ultra-fast CPU transcription** with NVIDIA Parakeet TDT (up to 30x realtime). [See Parakeet TDT backend →](#-parakeet-tdt-backend-ultra-fast-cpu-transcription) |
 | **Translation** | `nllw` | 200+ language translation |
 | **Speaker diarization** | `git+https://github.com/NVIDIA/NeMo.git@main#egg=nemo_toolkit[asr]` | SOTA speaker identification |
 | OpenAI API | `openai` | Use OpenAI's hosted Whisper API |
 | *[Not recommended]* Speaker diarization with Diart | `diart` | Legacy diarization backend |
 
-> **💡 Recommended for Production**: Install `whispercpp` for the fastest realtime performance with quantized models, or `openvino-genai` for optimized CPU inference on Intel processors. See the [WhisperCpp Optimization Guide](docs/WHISPERCPP_OPTIMIZATION.md) for detailed setup instructions.
+> **💡 Recommended for Production**: Install `whispercpp` for the fastest realtime performance with quantized models, `openvino-genai` for optimized CPU inference on Intel processors, or `parakeet` for ultra-fast multilingual CPU transcription. See the [WhisperCpp Optimization Guide](docs/WHISPERCPP_OPTIMIZATION.md) for detailed setup instructions.
 
 See **Parameters & Configuration** below on how to use them.
 
@@ -245,6 +246,56 @@ For a standalone OpenVINO Whisper server with OpenAI-compatible API, see:
 > **Note**: The OpenVINO backend is currently experimental. For production use, consider `whispercpp` or `faster-whisper` backends.
 
 
+### 🔥 Parakeet TDT Backend (Ultra-Fast CPU Transcription)
+
+For **ultra-fast multilingual transcription** on CPU, use the Parakeet TDT backend with NVIDIA's Parakeet TDT 0.6B v3 model:
+
+```bash
+# Install Parakeet TDT dependencies
+pip install whisperlivekit[parakeet]
+
+# Quick start with Parakeet TDT backend
+wlk --backend parakeet-tdt \
+    --backend-policy localagreement \
+    --language en \
+    --parakeet-quantization int8 \
+    --parakeet-threads 8
+```
+
+**Why Parakeet TDT?**
+- ⚡ **Up to 30x realtime** on modern CPUs (Intel i7-12700K)
+- 🌍 **25 languages** with automatic language detection
+- 💻 **Pure CPU inference** - no GPU required
+- 📉 **Efficient architecture** - Token-and-Duration Transducer (TDT) model
+- 🎯 **Faster than GPU-accelerated Whisper** on consumer CPUs
+
+**Getting Started:**
+1. Install: `pip install whisperlivekit[parakeet]`
+2. Run with `--backend parakeet-tdt --language en`
+3. The model will be automatically downloaded on first run
+
+**Supported Languages** (25 total):
+English, Spanish, French, Russian, German, Italian, Polish, Ukrainian, Romanian, Dutch, Hungarian, Greek, Swedish, Czech, Bulgarian, Portuguese, Slovak, Croatian, Danish, Finnish, Lithuanian, Slovenian, Latvian, Estonian, Maltese
+
+**Performance Benchmarks:**
+- **CPU** (i7-12700K): ~30x realtime speedup
+- **CPU** (i7-4790): ~17x realtime speedup
+- **Faster than** GPU-accelerated faster-whisper on consumer CPUs
+
+**Configuration Options:**
+```bash
+wlk --backend parakeet-tdt \
+    --parakeet-model-name nemo-parakeet-tdt-0.6b-v3 \
+    --parakeet-quantization int8 \
+    --parakeet-device CPU \
+    --parakeet-threads 8
+```
+
+**Related Project:**
+For the standalone Parakeet TDT implementation with FastAPI and OpenAI-compatible API, see:
+- 🔗 **[parakeet-tdt-0.6b-v3-fastapi-openai](https://github.com/groxaxo/parakeet-tdt-0.6b-v3-fastapi-openai)** - Original implementation that inspired this integration
+
+
 ## Parameters & Configuration
 
 
@@ -256,7 +307,7 @@ For a standalone OpenVINO Whisper server with OpenAI-compatible API, see:
 | `--target-language` | If sets, translates using [NLLW](https://github.com/QuentinFuxa/NoLanguageLeftWaiting). [200 languages available](docs/supported_languages.md). If you want to translate to english, you can also use `--direct-english-translation`. The STT model will try to directly output the translation. | `None` |
 | `--diarization` | Enable speaker identification | `False` |
 | `--backend-policy` | Streaming strategy: `1`/`simulstreaming` uses AlignAtt SimulStreaming, `2`/`localagreement` uses the LocalAgreement policy | `simulstreaming` |
-| `--backend` | Whisper implementation selector. `auto` picks MLX on macOS (if installed), otherwise Faster-Whisper, otherwise vanilla Whisper. You can also force `mlx-whisper`, `faster-whisper`, `whisper`, `whispercpp` (for quantized GGML/GGUF models - [guide](docs/WHISPERCPP_OPTIMIZATION.md)), `openvino` (for fast CPU inference on Intel processors), or `openai-api` (LocalAgreement only) | `auto` |
+| `--backend` | Whisper implementation selector. `auto` picks MLX on macOS (if installed), otherwise Faster-Whisper, otherwise vanilla Whisper. You can also force `mlx-whisper`, `faster-whisper`, `whisper`, `whispercpp` (for quantized GGML/GGUF models - [guide](docs/WHISPERCPP_OPTIMIZATION.md)), `openvino` (for fast CPU inference on Intel processors), `parakeet-tdt` (for NVIDIA Parakeet TDT with ultra-fast CPU transcription), or `openai-api` (LocalAgreement only) | `auto` |
 | `--no-vac` | Disable Voice Activity Controller. NOT ADVISED | `False` |
 | `--no-vad` | Disable Voice Activity Detection. NOT ADVISED | `False` |
 | `--warmup-file` | Audio file path for model warmup | `jfk.wav` |
@@ -326,6 +377,16 @@ For a standalone OpenVINO Whisper server with OpenAI-compatible API, see:
 | `--openvino-threads` | Number of CPU threads (0 = auto-detect) | `0` |
 
 > **Note**: The OpenVINO backend requires pre-converted models in OpenVINO IR format. See the [Whisper-Fast-Cpu-OpenVino](https://github.com/groxaxo/Whisper-Fast-Cpu-OpenVino) project for model conversion and setup instructions.
+
+
+| Parakeet TDT backend options | Description | Default |
+|-----------|-------------|---------|
+| `--parakeet-model-name` | Parakeet TDT model name from Hugging Face | `nemo-parakeet-tdt-0.6b-v3` |
+| `--parakeet-quantization` | Quantization type (`int8`, `fp16`, `fp32`) | `int8` |
+| `--parakeet-device` | Execution device (`CPU`, `GPU`) | `CPU` |
+| `--parakeet-threads` | Number of CPU threads for ONNX Runtime inference | `8` |
+
+> **Note**: The Parakeet TDT model is automatically downloaded from Hugging Face on first run. For the standalone implementation, see [parakeet-tdt-0.6b-v3-fastapi-openai](https://github.com/groxaxo/parakeet-tdt-0.6b-v3-fastapi-openai).
 
 
 

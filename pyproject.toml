@@ -44,6 +44,7 @@ dependencies = [
 [project.optional-dependencies]
 translation = ["nllw"]
 sentence_tokenizer = ["mosestokenizer", "wtpsplit"]
+parakeet = ["onnx-asr[hub]>=0.10.0", "onnxruntime>=1.18.1"]
 
 [project.urls]
 Homepage = "https://github.com/QuentinFuxa/WhisperLiveKit"

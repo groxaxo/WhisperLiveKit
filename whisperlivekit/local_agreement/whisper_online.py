@@ -12,11 +12,12 @@ from whisperlivekit.backend_support import (
     faster_backend_available,
     mlx_backend_available,
     whispercpp_backend_available,
+    parakeet_backend_available,
 )
 from whisperlivekit.model_paths import detect_model_format, resolve_model_path
 from whisperlivekit.warmup import warmup_asr
 
-from .backends import FasterWhisperASR, MLXWhisper, OpenaiApiASR, OpenVINOASR, WhisperASR, WhisperCppASR
+from .backends import FasterWhisperASR, MLXWhisper, OpenaiApiASR, OpenVINOASR, ParakeetTDTASR, WhisperASR, WhisperCppASR
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +106,11 @@ def backend_factory(
             openvino_model_dir=None,
             openvino_device="CPU",
             openvino_threads=0,
+            # Parakeet TDT backend parameters
+            parakeet_model_name="nemo-parakeet-tdt-0.6b-v3",
+            parakeet_quantization="int8",
+            parakeet_device="CPU",
+            parakeet_threads=8,
         ):
     backend_choice = backend
     custom_reference = model_path or model_dir
@@ -159,6 +165,11 @@ def backend_factory(
                     "OpenVINO backend requires --openvino-model-dir or --model-dir "
                     "pointing to an OpenVINO IR model directory."
                 )
+        elif backend_choice == "parakeet-tdt":
+            asr_cls = ParakeetTDTASR
+            # Parakeet TDT uses model_name instead of model_dir
+            # model_dir is not used for Parakeet TDT
+            model_override = None
         else:
             asr_cls = WhisperASR
             model_override = str(resolved_root) if resolved_root is not None else None
@@ -201,6 +212,13 @@ def backend_factory(
             asr_kwargs.update({
                 "device": openvino_device,
                 "threads": openvino_threads,
+            })
+        elif backend_choice == "parakeet-tdt":
+            asr_kwargs.update({
+                "model_name": parakeet_model_name,
+                "quantization": parakeet_quantization,
+                "device": parakeet_device,
+                "threads": parakeet_threads,
             })
         
         asr = asr_cls(**asr_kwargs)
@@ -275,6 +293,11 @@ def _normalize_backend_choice(
         from whisperlivekit.backend_support import openvino_backend_available
         if not openvino_backend_available(warn_on_missing=True):
             raise RuntimeError("openvino backend requested but openvino-genai is not installed.")
+        return backend_choice
+
+    if backend_choice == "parakeet-tdt":
+        if not parakeet_backend_available(warn_on_missing=True):
+            raise RuntimeError("parakeet-tdt backend requested but onnx-asr is not installed.")
         return backend_choice
 
     raise ValueError(f"Unknown backend '{preferred_backend}' for LocalAgreement.")

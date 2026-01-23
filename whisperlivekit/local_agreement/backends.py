@@ -1,7 +1,9 @@
 import io
 import logging
 import math
+import os
 import sys
+import tempfile
 from typing import List
 
 import numpy as np
@@ -1029,3 +1031,174 @@ class OpenVINOASR(ASRBase):
 
     def use_vad(self):
         logger.warning("VAD is not currently supported for OpenVINO backend and will be ignored.")
+
+
+class ParakeetTDTASR(ASRBase):
+    """Uses NVIDIA Parakeet TDT with ONNX Runtime as the backend for ultra-fast CPU transcription."""
+    sep = ""
+
+    def __init__(self, lan, model_size=None, cache_dir=None, model_dir=None,
+                 model_name="nemo-parakeet-tdt-0.6b-v3", quantization="int8",
+                 device="CPU", threads=8, **kwargs):
+        self.model_name = model_name
+        self.quantization = quantization
+        self.device = device
+        self.threads = threads
+        super().__init__(lan, model_size, cache_dir, model_dir, **kwargs)
+
+    def load_model(self, model_size=None, cache_dir=None, model_dir=None):
+        try:
+            import onnx_asr
+        except ImportError:
+            raise ImportError(
+                "onnx-asr is not installed. "
+                "Install it with: pip install 'onnx-asr[hub]'"
+            )
+
+        try:
+            import onnxruntime as ort
+        except ImportError:
+            raise ImportError(
+                "onnxruntime is not installed. "
+                "Install it with: pip install onnxruntime (or onnxruntime-gpu for GPU support)"
+            )
+
+        logger.info(f"Loading Parakeet TDT model '{self.model_name}' with {self.quantization} quantization on {self.device}")
+
+        # Configure ONNX Runtime providers based on device
+        providers_to_try = []
+        if self.device.upper() == "GPU":
+            available_providers = ort.get_available_providers()
+            if "TensorrtExecutionProvider" in available_providers:
+                providers_to_try.append("TensorrtExecutionProvider")
+            if "CUDAExecutionProvider" in available_providers:
+                providers_to_try.append("CUDAExecutionProvider")
+            if not providers_to_try:
+                logger.warning("GPU requested but no GPU providers available, falling back to CPU")
+                providers_to_try.append("CPUExecutionProvider")
+        else:
+            providers_to_try.append("CPUExecutionProvider")
+
+        # Configure session options for optimal performance
+        sess_options = ort.SessionOptions()
+        if "CPUExecutionProvider" in providers_to_try:
+            sess_options.intra_op_num_threads = self.threads
+            sess_options.inter_op_num_threads = 1
+            sess_options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+            sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+
+        try:
+            # Load the Parakeet TDT model with timestamps enabled
+            model = onnx_asr.load_model(
+                self.model_name,
+                quantization=self.quantization,
+                providers=providers_to_try,
+                sess_options=sess_options,
+            ).with_timestamps()
+            
+            logger.info(f"Parakeet TDT model loaded successfully using providers: {providers_to_try}")
+            return model
+        except Exception as e:
+            logger.error(f"Failed to load Parakeet TDT model: {e}")
+            raise RuntimeError(
+                f"Could not load Parakeet TDT model '{self.model_name}'. "
+                f"Error: {e}"
+            )
+
+    def transcribe(self, audio, init_prompt=""):
+        """Transcribe audio using Parakeet TDT ONNX model."""
+        # Convert audio to the format expected by onnx-asr
+        # onnx-asr expects float32 audio at 16kHz
+        if isinstance(audio, np.ndarray):
+            audio_data = audio.astype(np.float32)
+        else:
+            audio_data = np.array(audio, dtype=np.float32)
+
+        # Save audio to temporary WAV file for onnx-asr
+        # Note: This is necessary because onnx-asr.recognize() expects a file path
+        # TODO: Check if future versions of onnx-asr support direct numpy array input
+        with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp_file:
+            tmp_path = tmp_file.name
+            sf.write(tmp_path, audio_data, 16000)
+
+        try:
+            # Run inference using onnx-asr
+            result = self.model.recognize(tmp_path)
+
+            # Convert onnx-asr result to expected format
+            segments = []
+            if result and result.text:
+                # Clean up the text (remove SentencePiece artifacts)
+                cleaned_text = result.text.replace("\u2581", " ").strip()
+                
+                # Get timestamps
+                start_time = result.timestamps[0] if result.timestamps else 0
+                end_time = result.timestamps[-1] if len(result.timestamps) > 1 else start_time + 0.1
+
+                # Build words list from tokens and timestamps
+                words = []
+                for j, (token, timestamp) in enumerate(zip(result.tokens, result.timestamps)):
+                    if j < len(result.timestamps) - 1:
+                        word_end = result.timestamps[j + 1]
+                    else:
+                        word_end = end_time
+
+                    # Clean token text
+                    clean_token = token.replace("\u2581", " ").strip()
+                    if clean_token:
+                        words.append({
+                            "start": timestamp,
+                            "end": word_end,
+                            "word": clean_token,
+                        })
+
+                # Create segment
+                segment = {
+                    "start": start_time,
+                    "end": end_time,
+                    "text": cleaned_text,
+                    "words": words,
+                }
+                segments.append(segment)
+
+            return {"segments": segments, "language": self.original_language or "auto"}
+        except Exception as e:
+            logger.error(f"Parakeet TDT transcription failed: {e}")
+            raise
+        finally:
+            # Clean up temporary file (always executed)
+            try:
+                os.remove(tmp_path)
+            except (OSError, FileNotFoundError) as e:
+                logger.debug(f"Could not remove temporary file {tmp_path}: {e}")
+
+    def ts_words(self, r) -> List[ASRToken]:
+        """Convert Parakeet TDT result to ASRToken list."""
+        tokens = []
+        for segment in r.get("segments", []):
+            # Use word-level timestamps if available
+            if segment.get("words"):
+                for word in segment["words"]:
+                    token = ASRToken(
+                        word["start"],
+                        word["end"],
+                        word["word"],
+                    )
+                    tokens.append(token)
+            else:
+                # Fallback: create a single token for the whole segment
+                text = segment.get("text", "").strip()
+                if text:
+                    token = ASRToken(
+                        segment["start"],
+                        segment["end"],
+                        text,
+                    )
+                    tokens.append(token)
+        return tokens
+
+    def segments_end_ts(self, res) -> List[float]:
+        return [seg["end"] for seg in res.get("segments", [])]
+
+    def use_vad(self):
+        logger.warning("VAD is not currently supported for Parakeet TDT backend and will be ignored.")
