@@ -447,6 +447,12 @@ docker build -f Dockerfile.openvino -t wlk-openvino .
 docker run -p 8000:8000 --name wlk-openvino wlk-openvino
 ```
 
+**Parakeet TDT optimized (ultra-fast CPU transcription):**
+```bash
+docker build -f Dockerfile.parakeet -t wlk-parakeet .
+docker run -p 8000:8000 --name wlk-parakeet wlk-parakeet
+```
+
 ### Advanced Usage
 
 **Custom configuration:**
@@ -457,6 +463,10 @@ docker run --gpus all -p 8000:8000 --name wlk wlk --model large-v3 --language fr
 # OpenVINO with custom settings
 docker run -p 8000:8000 --name wlk-openvino wlk-openvino \
   --backend openvino --openvino-device CPU --language en
+
+# Parakeet TDT with custom settings
+docker run -p 8000:8000 --name wlk-parakeet wlk-parakeet \
+  --backend parakeet-tdt --language fr --parakeet-quantization int8
 ```
 
 ### Memory Requirements
@@ -467,6 +477,7 @@ docker run -p 8000:8000 --name wlk-openvino wlk-openvino \
 
 - `--build-arg` Options:
   - `EXTRAS="translation"` - Add extras to the image's installation (no spaces). Remember to set necessary container options!
+  - `EXTRAS="parakeet"` - Install Parakeet TDT dependencies for ultra-fast CPU transcription
   - `HF_PRECACHE_DIR="./.cache/"` - Pre-load a model cache for faster first-time start
   - `HF_TKN_FILE="./token"` - Add your Hugging Face Hub access token to download gated models
 

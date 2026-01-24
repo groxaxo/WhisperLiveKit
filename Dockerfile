@@ -37,7 +37,7 @@ RUN pip3 install --upgrade pip setuptools wheel && \
 COPY . .
 
 # Install WhisperLiveKit directly, allowing for optional dependencies
-# Example: --build-arg EXTRAS="translation"
+# Example: --build-arg EXTRAS="translation" or EXTRAS="parakeet"
 RUN if [ -n "$EXTRAS" ]; then \
       echo "Installing with extras: [$EXTRAS]"; \
       pip install --no-cache-dir "whisperlivekit[$EXTRAS]"; \

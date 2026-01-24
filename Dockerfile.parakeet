@@ -1,4 +1,4 @@
-FROM python:3.13-slim
+FROM python:3.11-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
@@ -9,27 +9,29 @@ ARG EXTRAS
 ARG HF_PRECACHE_DIR
 ARG HF_TKN_FILE
 
+# Install system dependencies
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         ffmpeg \
         git \
         build-essential \
-        python3-dev && \
+        python3-dev \
+        wget \
+        ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
-# Install CPU-only PyTorch
-RUN pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+# Install CPU-only PyTorch (lighter weight for Parakeet TDT use)
+RUN pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 
 COPY . .
 
-# Install WhisperLiveKit directly, allowing for optional dependencies
-# Example: --build-arg EXTRAS="parakeet" for ultra-fast CPU transcription
+# Install WhisperLiveKit with Parakeet TDT support
 RUN if [ -n "$EXTRAS" ]; then \
-      echo "Installing with extras: [$EXTRAS]"; \
-      pip install --no-cache-dir whisperlivekit[$EXTRAS]; \
+      echo "Installing with extras: [parakeet,$EXTRAS]"; \
+      pip install --no-cache-dir "whisperlivekit[parakeet,$EXTRAS]"; \
     else \
-      echo "Installing base package only"; \
-      pip install --no-cache-dir whisperlivekit; \
+      echo "Installing base package with Parakeet TDT"; \
+      pip install --no-cache-dir "whisperlivekit[parakeet]"; \
     fi
 
 # Enable in-container caching for Hugging Face models
@@ -52,11 +54,11 @@ RUN if [ -n "$HF_TKN_FILE" ]; then \
     else \
       echo "No Hugging Face token file specified, skipping token setup"; \
     fi
-    
+
 # Expose port for the transcription server
 EXPOSE 8000
 
 ENTRYPOINT ["whisperlivekit-server", "--host", "0.0.0.0"]
 
-# Default args - you might want to use a smaller model for CPU
-CMD ["--model", "tiny"]
+# Default args - using Parakeet TDT backend for ultra-fast CPU transcription
+CMD ["--backend", "parakeet-tdt", "--backend-policy", "localagreement", "--language", "en", "--parakeet-quantization", "int8", "--parakeet-threads", "8"]
