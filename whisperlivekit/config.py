@@ -31,8 +31,8 @@ class WhisperLiveKitConfig:
     pcm_input: bool = False
     disable_punctuation_split: bool = False
     diarization_backend: str = "sortformer"
-    backend_policy: str = "simulstreaming"
-    backend: str = "auto"
+    backend_policy: str = "localagreement"
+    backend: str = "openai-api"
 
     # Transcription common
     warmup_file: Optional[str] = None

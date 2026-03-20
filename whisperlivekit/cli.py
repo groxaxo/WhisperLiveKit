@@ -121,10 +121,10 @@ BACKENDS = [
     },
     {
         "id": "openai-api",
-        "name": "OpenAI API",
+        "name": "Parakeet / OpenAI-compatible API",
         "module": "openai",
         "install": "pip install openai",
-        "description": "Cloud-based transcription via OpenAI API",
+        "description": "OpenAI-compatible transcription API (defaults to local Parakeet)",
         "streaming": "cloud",
         "devices": ["cloud"],
     },
@@ -577,7 +577,7 @@ def cmd_transcribe(args: list):
         description="Transcribe audio files offline using WhisperLiveKit.",
     )
     parser.add_argument("files", nargs="+", help="Audio files to transcribe")
-    parser.add_argument("--backend", default="auto", help="ASR backend (default: auto)")
+    parser.add_argument("--backend", default="openai-api", help="ASR backend (default: openai-api)")
     parser.add_argument("--model", default="base", dest="model_size", help="Model size (default: base)")
     parser.add_argument("--language", "--lan", default="auto", dest="lan", help="Language code (default: auto)")
     parser.add_argument("--format", default="text", choices=["text", "json", "srt", "vtt", "verbose_json"],
@@ -836,7 +836,7 @@ def cmd_listen(args: list):
         prog="wlk listen",
         description="Transcribe live microphone input in real-time.",
     )
-    parser.add_argument("--backend", default="auto", help="ASR backend (default: auto)")
+    parser.add_argument("--backend", default="openai-api", help="ASR backend (default: openai-api)")
     parser.add_argument("--model", default="base", dest="model_size", help="Model size (default: base)")
     parser.add_argument("--language", "--lan", default="auto", dest="lan", help="Language code (default: auto)")
     parser.add_argument("--diarization", action="store_true", help="Enable speaker diarization")
@@ -1207,7 +1207,7 @@ def cmd_diagnose(args: list):
     )
     parser.add_argument("file", nargs="?", default=None,
                         help="Audio file to diagnose (default: built-in test sample)")
-    parser.add_argument("--backend", default="auto", help="ASR backend (default: auto)")
+    parser.add_argument("--backend", default="openai-api", help="ASR backend (default: openai-api)")
     parser.add_argument("--model", default="base", dest="model_size", help="Model size (default: base)")
     parser.add_argument("--language", "--lan", default="auto", dest="lan", help="Language code (default: auto)")
     parser.add_argument("--speed", type=float, default=1.0,

@@ -139,16 +139,16 @@ def parse_args():
     parser.add_argument(
         "--backend-policy",
         type=str,
-        default="simulstreaming",
+        default="localagreement",
         choices=["1", "2", "simulstreaming", "localagreement"],
         help="Select the streaming policy: 1 or 'simulstreaming' for AlignAtt, 2 or 'localagreement' for LocalAgreement.",
     )
     parser.add_argument(
         "--backend",
         type=str,
-        default="auto",
+        default="openai-api",
         choices=["auto", "mlx-whisper", "faster-whisper", "whisper", "openai-api", "voxtral", "voxtral-mlx", "qwen3", "qwen3-mlx", "qwen3-mlx-simul", "qwen3-simul", "vllm-realtime"],
-        help="Select the ASR backend implementation. Use 'qwen3-mlx-simul' for Qwen3-ASR SimulStreaming on Apple Silicon (MLX). Use 'qwen3-mlx' for Qwen3-ASR LocalAgreement on MLX. Use 'qwen3-simul' for Qwen3-ASR SimulStreaming (PyTorch). Use 'vllm-realtime' for vLLM Realtime WebSocket.",
+        help="Select the ASR backend implementation. The default 'openai-api' backend targets a local OpenAI-compatible Parakeet server. Use 'qwen3-mlx-simul' for Qwen3-ASR SimulStreaming on Apple Silicon (MLX). Use 'qwen3-mlx' for Qwen3-ASR LocalAgreement on MLX. Use 'qwen3-simul' for Qwen3-ASR SimulStreaming (PyTorch). Use 'vllm-realtime' for vLLM Realtime WebSocket.",
     )
     parser.add_argument(
         "--no-vac",

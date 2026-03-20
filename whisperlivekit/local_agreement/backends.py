@@ -1,6 +1,7 @@
 import io
 import logging
 import math
+import os
 import sys
 from typing import List
 
@@ -12,6 +13,22 @@ from whisperlivekit.timed_objects import ASRToken
 from whisperlivekit.whisper.transcribe import transcribe as whisper_transcribe
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_OPENAI_API_BASE_URL = "http://127.0.0.1:5092/v1"
+DEFAULT_OPENAI_API_KEY = "sk-no-key-required"
+DEFAULT_OPENAI_API_MODEL = "parakeet-tdt-0.6b-v3"
+
+
+def get_openai_api_defaults():
+    return {
+        "base_url": os.getenv("WHISPERLIVEKIT_OPENAI_BASE_URL")
+        or os.getenv("OPENAI_BASE_URL")
+        or DEFAULT_OPENAI_API_BASE_URL,
+        "api_key": os.getenv("OPENAI_API_KEY") or DEFAULT_OPENAI_API_KEY,
+        "model": os.getenv("WHISPERLIVEKIT_OPENAI_MODEL") or DEFAULT_OPENAI_API_MODEL,
+    }
+
+
 class ASRBase:
     sep = " "  # join transcribe words with this character (" " for whisper_timestamped,
               # "" for faster-whisper because it emits the spaces when needed)
@@ -221,7 +238,10 @@ class OpenaiApiASR(ASRBase):
     """Uses OpenAI's Whisper API for transcription."""
     def __init__(self, lan=None, temperature=0, logfile=sys.stderr):
         self.logfile = logfile
-        self.modelname = "whisper-1"
+        defaults = get_openai_api_defaults()
+        self.base_url = defaults["base_url"]
+        self.api_key = defaults["api_key"]
+        self.modelname = defaults["model"]
         self.original_language = None if lan == "auto" else lan
         self.response_format = "verbose_json"
         self.temperature = temperature
@@ -232,7 +252,7 @@ class OpenaiApiASR(ASRBase):
 
     def load_model(self, *args, **kwargs):
         from openai import OpenAI
-        self.client = OpenAI()
+        self.client = OpenAI(base_url=self.base_url, api_key=self.api_key)
         self.transcribed_seconds = 0
 
     def ts_words(self, segments) -> List[ASRToken]:
