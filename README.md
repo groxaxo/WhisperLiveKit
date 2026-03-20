@@ -234,8 +234,8 @@ async def websocket_endpoint(websocket: WebSocket):
 | `--language` | List [here](docs/supported_languages.md). If you use `auto`, the model attempts to detect the language automatically, but it tends to bias towards English. | `auto` |
 | `--target-language` | If sets, translates using [NLLW](https://github.com/QuentinFuxa/NoLanguageLeftWaiting). [200 languages available](docs/supported_languages.md). If you want to translate to english, you can also use `--direct-english-translation`. The STT model will try to directly output the translation. | `None` |
 | `--diarization` | Enable speaker identification | `False` |
-| `--backend-policy` | Streaming strategy: `1`/`simulstreaming` uses AlignAtt SimulStreaming, `2`/`localagreement` uses the LocalAgreement policy | `simulstreaming` |
-| `--backend` | ASR backend selector. `auto` picks MLX on macOS (if installed), otherwise Faster-Whisper, otherwise vanilla Whisper. Options: `mlx-whisper`, `faster-whisper`, `whisper`, `openai-api` (LocalAgreement only), `voxtral-mlx` (Apple Silicon), `voxtral` (HuggingFace) | `auto` |
+| `--backend-policy` | Streaming strategy: `1`/`simulstreaming` uses AlignAtt SimulStreaming, `2`/`localagreement` uses the LocalAgreement policy. The default backend uses LocalAgreement. | `localagreement` |
+| `--backend` | ASR backend selector. The default `openai-api` backend targets a local OpenAI-compatible Parakeet server at `http://127.0.0.1:5092/v1` using model `parakeet-tdt-0.6b-v3`. Override with `WHISPERLIVEKIT_OPENAI_BASE_URL`, `WHISPERLIVEKIT_OPENAI_MODEL`, `WHISPERLIVEKIT_OPENAI_API_KEY`, or the standard `OPENAI_BASE_URL` / `OPENAI_API_KEY` environment variables; `WHISPERLIVEKIT_*` takes precedence. Options: `auto`, `mlx-whisper`, `faster-whisper`, `whisper`, `openai-api` (LocalAgreement only), `voxtral-mlx` (Apple Silicon), `voxtral` (HuggingFace) | `openai-api` |
 | `--no-vac` | Disable Voice Activity Controller. NOT ADVISED | `False` |
 | `--no-vad` | Disable Voice Activity Detection. NOT ADVISED | `False` |
 | `--warmup-file` | Audio file path for model warmup | `jfk.wav` |
