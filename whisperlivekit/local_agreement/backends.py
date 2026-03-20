@@ -20,11 +20,20 @@ DEFAULT_OPENAI_API_MODEL = "parakeet-tdt-0.6b-v3"
 
 
 def get_openai_api_defaults():
+    """Return OpenAI-compatible API defaults with environment overrides.
+
+    Precedence is:
+    1. WHISPERLIVEKIT_OPENAI_BASE_URL / WHISPERLIVEKIT_OPENAI_MODEL / WHISPERLIVEKIT_OPENAI_API_KEY
+    2. OPENAI_BASE_URL / OPENAI_API_KEY
+    3. Built-in local Parakeet defaults
+    """
     return {
         "base_url": os.getenv("WHISPERLIVEKIT_OPENAI_BASE_URL")
         or os.getenv("OPENAI_BASE_URL")
         or DEFAULT_OPENAI_API_BASE_URL,
-        "api_key": os.getenv("OPENAI_API_KEY") or DEFAULT_OPENAI_API_KEY,
+        "api_key": os.getenv("WHISPERLIVEKIT_OPENAI_API_KEY")
+        or os.getenv("OPENAI_API_KEY")
+        or DEFAULT_OPENAI_API_KEY,
         "model": os.getenv("WHISPERLIVEKIT_OPENAI_MODEL") or DEFAULT_OPENAI_API_MODEL,
     }
 
