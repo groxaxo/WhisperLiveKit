@@ -1,21 +1,47 @@
-<h1 align="center">WLK</h1>
-<p align="center"><b>WhisperLiveKit: Ultra-low-latency, self-hosted speech-to-text with speaker identification</b></p>
+<div align="center">
 
+![WLK Banner](https://raw.githubusercontent.com/QuentinFuxa/WhisperLiveKit/refs/heads/main/demo.png)
 
-<p align="center">
-<img src="https://raw.githubusercontent.com/QuentinFuxa/WhisperLiveKit/refs/heads/main/demo.png" alt="WhisperLiveKit Demo" width="730">
-</p>
+# WhisperLiveKit
 
+**Ultra-low-latency, self-hosted speech-to-text with speaker identification**
 
-<p align="center">
-<a href="https://pypi.org/project/whisperlivekit/"><img alt="PyPI Version" src="https://img.shields.io/pypi/v/whisperlivekit?color=g"></a>
-<a href="https://pepy.tech/project/whisperlivekit"><img alt="PyPI Downloads" src="https://static.pepy.tech/personalized-badge/whisperlivekit?period=total&units=international_system&left_color=grey&right_color=brightgreen&left_text=installations"></a>
-<a href="https://pypi.org/project/whisperlivekit/"><img alt="Python Versions" src="https://img.shields.io/badge/python-3.11--3.13-dark_green"></a>
-<a href="https://huggingface.co/qfuxa/whisper-base-french-lora">
-  <img alt="Hugging Face Weights" src="https://img.shields.io/badge/🤗-Hugging%20Face%20Weights-yellow" />
-</a>
-<a href="https://github.com/QuentinFuxa/WhisperLiveKit/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/License-Apache 2.0-dark_green"></a>
-</p>
+[![PyPI Version](https://img.shields.io/pypi/v/whisperlivekit?color=g)](https://pypi.org/project/whisperlivekit/)
+[![PyPI Downloads](https://static.pepy.tech/personalized-badge/whisperlivekit?period=total&units=international_system&left_color=grey&right_color=brightgreen&left_text=installations)](https://pepy.tech/project/whisperlivekit)
+[![Python Versions](https://img.shields.io/badge/python-3.11--3.13-dark_green)](https://pypi.org/project/whisperlivekit/)
+[![License](https://img.shields.io/badge/License-Apache%202.0-dark_green)](https://github.com/QuentinFuxa/WhisperLiveKit/blob/main/LICENSE)
+[![Hugging Face](https://img.shields.io/badge/🤗-Weights-yellow)](https://huggingface.co/qfuxa/whisper-base-french-lora)
+
+---
+
+## ✨ Features
+
+| Feature | Description |
+|---------|-------------|
+| ⚡ **Real-time Streaming** | Sub-100ms latency with SimulStreaming & LocalAgreement policies |
+| 🔊 **Speaker Diarization** | Sortformer & Diart integration for multi-speaker identification |
+| 🌍 **200+ Languages** | Multilingual transcription & simultaneous translation via NLLB |
+| 🔒 **Fully Local** | No cloud dependencies — run entirely on your infrastructure |
+| 🍎 **Apple Silicon** | Native MLX acceleration for M1/M2/M3/M4 chips |
+| 🖥️ **CPU Mode** | **NEW** — Run on any machine with Parakeet (no GPU required) |
+| 🌐 **Chrome Extension** | Capture & transcribe audio from any browser tab |
+
+---
+
+## 🚀 Quick Start
+
+```bash
+# Install
+pip install whisperlivekit
+
+# Start the server — open http://localhost:8000 and start talking
+wlk --model base --language en
+
+# Auto-pull model and start server
+wlk run whisper:tiny
+```
+
+</div>
 
 
 ### Powered by Leading Research:
@@ -164,6 +190,41 @@ wlk --backend voxtral
 
 Voxtral uses its own streaming policy and does not use LocalAgreement or SimulStreaming.
 See [BENCHMARK.md](BENCHMARK.md) for performance numbers.
+
+---
+
+### 🖥️ CPU Mode (Parakeet)
+
+Run WhisperLiveKit on any machine — **no GPU required**. The default backend uses [Parakeet](https://huggingface.co/nickmccur/parakeet-tdt-0.6b-v3), an open-source ASR model that runs efficiently on CPU.
+
+```bash
+# Install CPU dependencies
+pip install -e ".[cpu]"
+
+# Start Parakeet server (in one terminal)
+# See: https://github.com/remsky/Parakeet-ASR
+
+# Or use the default — it connects to localhost:5092
+wlk --backend openai-api
+```
+
+**No server needed?** Use the GPU-free backends directly:
+
+```bash
+# Faster Whisper (CPU-optimized)
+wlk --backend faster-whisper
+
+# Native Whisper (pure PyTorch)
+wlk --backend whisper
+```
+
+| Backend | Best For | Speed | Accuracy |
+|---------|----------|-------|----------|
+| **Parakeet (default)** | CPU-only servers, macOS without GPU | Fast | Good |
+| **Faster Whisper** | Intel/AMD CPUs, batch processing | Fast | Very Good |
+| **Whisper (PyTorch)** | Debugging, custom models | Medium | Very Good |
+
+---
 
 ### Usage Examples
 
