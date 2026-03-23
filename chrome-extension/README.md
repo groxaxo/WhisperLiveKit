@@ -1,19 +1,80 @@
-## WhisperLiveKit Chrome Extension v0.1.1
-Capture the audio of your current tab, transcribe diarize and translate it using WhisperliveKit, in Chrome and other Chromium-based browsers.
+# WhisperLiveKit Chrome Extension
 
-> Currently, only the tab audio is captured; your microphone audio is not recorded.
+> **Version 0.1.1** — Capture, transcribe, diarize & translate audio from any browser tab
 
-<img src="https://raw.githubusercontent.com/QuentinFuxa/WhisperLiveKit/refs/heads/main/chrome-extension/demo-extension.png" alt="WhisperLiveKit Demo" width="730">
+<p align="center">
+  <img src="https://raw.githubusercontent.com/QuentinFuxa/WhisperLiveKit/refs/heads/main/chrome-extension/demo-extension.png" alt="WhisperLiveKit Chrome Extension Demo" width="730">
+</p>
 
-## Running this extension
-1. Run `python scripts/sync_extension.py` to copy frontend files to the `chrome-extension` directory.
-2. Load the `chrome-extension` directory in Chrome as an unpacked extension.
+## ✨ Features
 
+| Feature | Description |
+|---------|-------------|
+| 🎙️ **Tab Audio Capture** | Capture audio from any Chrome tab in real-time |
+| 🗣️ **Speaker Diarization** | Identify multiple speakers in the conversation |
+| 🌍 **Live Translation** | Translate speech to 200+ languages simultaneously |
+| ⚡ **Low Latency** | Streaming transcription with sub-100ms latency |
+| 🔒 **Privacy-First** | All processing happens locally on your server |
+| 🖥️ **CPU Mode** | Works with Parakeet — no GPU required |
 
-## Devs:
-- Impossible to capture audio from tabs if extension is a pannel, unfortunately: 
-- https://issues.chromium.org/issues/40926394
-- https://groups.google.com/a/chromium.org/g/chromium-extensions/c/DET2SXCFnDg
-- https://issues.chromium.org/issues/40916430
+## 🚀 Quick Start
 
-- To capture microphone in an extension, there are tricks: https://github.com/justinmann/sidepanel-audio-issue , https://medium.com/@lynchee.owo/how-to-enable-microphone-access-in-chrome-extensions-by-code-924295170080 (comments)
+### 1. Start WhisperLiveKit Server
+
+```bash
+# GPU mode (recommended)
+wlk --model base --language en
+
+# CPU mode (no GPU required)
+pip install -e ".[cpu]"
+wlk --backend openai-api
+```
+
+### 2. Sync Extension Files
+
+```bash
+python scripts/sync_extension.py
+```
+
+### 3. Load Extension in Chrome
+
+1. Open `chrome://extensions/`
+2. Enable **Developer mode** (top-right toggle)
+3. Click **Load unpacked**
+4. Select the `chrome-extension` directory
+
+### 4. Use the Extension
+
+1. Navigate to any page with audio (YouTube, podcast, meeting, etc.)
+2. Click the WhisperLiveKit icon in your toolbar
+3. Grant tab audio permission when prompted
+4. Watch live transcription appear!
+
+## 🔧 Configuration
+
+Connect to a custom server:
+
+```javascript
+// In sidepanel.js - modify the WebSocket URL
+const ws = new WebSocket("ws://your-server:8000/asr");
+```
+
+## 🐛 Known Limitations
+
+- **Panel audio capture**: Tab audio cannot be captured from side panels ([Chromium Issue #40926394](https://issues.chromium.org/issues/40926394))
+- **Microphone input**: Requires additional configuration — see [these tricks](https://github.com/justinmann/sidepanel-audio-issue)
+
+## 🛠️ For Developers
+
+```bash
+# Rebuild frontend assets
+python scripts/sync_extension.py
+
+# Test with different backends
+wlk --backend faster-whisper --model medium
+wlk --backend openai-api  # Parakeet CPU mode
+```
+
+---
+
+**Made with ❤️ by the WhisperLiveKit team**
